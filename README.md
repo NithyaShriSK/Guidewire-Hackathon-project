@@ -74,23 +74,23 @@ Every payout request is passed through an AI scoring engine:
 - Time-series movement validation detects anomalies
 - Network clustering identifies coordinated fraud
 
-💣 Market Crash Handling (Flowchart)
+## 💣 Market Crash Handling
 
 ```mermaid
 flowchart TD
-    A[Mass Claims Triggered (500 Users)] --> B[External Data Validation]
-    B --> C{Is Disruption Real?}
+    A[Mass Claims Triggered] --> B[Validate External Data]
+    B --> C{Disruption Real}
 
-    C -->|NO| D[Reject All Claims]
-    C -->|YES| E[Behavior Validation]
+    C -->|No| D[Reject Claims]
+    C -->|Yes| E[Behavior Check]
 
-    E --> F[Network Pattern Analysis]
-    F --> G{Fraud Ring Detected?}
+    E --> F[Pattern Analysis]
+    F --> G{Fraud Ring}
 
-    G -->|YES| H[Throttle + Flag Accounts]
-    G -->|NO| I[Process Legit Claims]
+    G -->|Yes| H[Throttle and Flag]
+    G -->|No| I[Process Claims]
 
-    H --> J[Protect Liquidity Pool]
+    H --> J[Protect System]
     I --> J
 ```
 🛠️ 6. Technical Stack
