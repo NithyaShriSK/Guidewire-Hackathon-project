@@ -38,17 +38,17 @@ Instant Settlement: Pro-rated compensation is pushed immediately to the worker's
 
 ```mermaid
 flowchart TD
-    A[User Starts Delivery Block] --> B[System Activates Monitoring Engine]
-    B --> C[Fetch Weather + AQI + Traffic Data]
-    C --> D[Check Threshold Conditions]
-    D --> E{Trigger Detected?}
+    A[Start Delivery Block] --> B[Monitoring Engine]
+    B --> C[Fetch Weather AQI Traffic]
+    C --> D[Check Conditions]
+    D --> E{Trigger Detected}
 
-    E -->|YES| F[Run 3-Layer Validation]
-    E -->|NO| B
+    E -->|Yes| F[Run Validation]
+    E -->|No| B
 
-    F --> G[Calculate Remaining Block Time]
+    F --> G[Calculate Remaining Time]
     G --> H[Compute Payout]
-    H --> I[Send Instant Payment]
+    H --> I[Send Payment]
 ```
 🧠 5. AI Defense & Anti-Spoofing Architecture
 
