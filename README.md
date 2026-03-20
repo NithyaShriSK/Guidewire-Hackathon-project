@@ -34,7 +34,7 @@ Autonomous Monitoring: Continuous polling of Weather, AQI, and Traffic APIs.
 Parametric Trigger: If rainfall exceeds 15mm/hr or traffic delay indices cross a specific threshold, the trigger activates.
 Instant Settlement: Pro-rated compensation is pushed immediately to the worker's wallet.
 
-🔄 Workflow (Step-by-Step Flow)
+## 🔄 Workflow (Step-by-Step Flow)
 
 ```mermaid
 flowchart TD
@@ -46,7 +46,7 @@ flowchart TD
     E -->|Yes| F[Run Validation]
     E -->|No| B
 
-    F --> G[Calculate Remaining Time]
+    F --> G[Calculate Time]
     G --> H[Compute Payout]
     H --> I[Send Payment]
 ```
