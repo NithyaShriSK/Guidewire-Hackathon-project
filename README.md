@@ -36,6 +36,7 @@ Instant Settlement: Pro-rated compensation is pushed immediately to the worker's
 
 🔄 Workflow (Step-by-Step Flow)
 
+```mermaid
 flowchart TD
     A[User Starts Delivery Block] --> B[System Activates Monitoring Engine]
     B --> C[Fetch Weather + AQI + Traffic Data]
@@ -48,6 +49,7 @@ flowchart TD
     F --> G[Calculate Remaining Block Time]
     G --> H[Compute Payout]
     H --> I[Send Instant Payment]
+```
 🧠 5. AI Defense & Anti-Spoofing Architecture
 
 To survive large-scale fraud ("Market Crashes"), GigShield employs a 3-Layer Defense Strategy:
@@ -74,6 +76,7 @@ Every payout request is passed through an AI scoring engine:
 
 💣 Market Crash Handling (Flowchart)
 
+```mermaid
 flowchart TD
     A[Mass Claims Triggered (500 Users)] --> B[External Data Validation]
     B --> C{Is Disruption Real?}
@@ -89,6 +92,7 @@ flowchart TD
 
     H --> J[Protect Liquidity Pool]
     I --> J
+```
 🛠️ 6. Technical Stack
 
 Frontend: React.js, Tailwind CSS (Mobile-responsive UI)
