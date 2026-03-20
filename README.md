@@ -26,6 +26,14 @@ By targeting the block-based model, GigShield can calculate losses with high gra
 2 hours lost = 50% payout (₹250)
 1 hour lost = 25% payout (₹125)
 
+| Disruption Type        | Insurance Trigger (Reason)                                                | Open Source / Free API             |
+| ---------------------- | ------------------------------------------------------------------------- | ---------------------------------- |
+| 🌧️ Extreme Weather    | Heavy rain, flooding, or cyclones that make delivery unsafe or impossible | OpenWeatherMap API                 |
+| 🌫️ Environmental Risk | Severe AQI levels (e.g., AQI > 400) affecting breathing conditions        | WAQI (World Air Quality Index) API |
+| 🔥 Extreme Heat        | Temperature exceeding safe working thresholds (e.g., > 42°C)              | Meteostat API                      |
+| 🚦 Social / Traffic    | Road blockages, strikes, curfews, or extreme traffic congestion           | TomTom Traffic Stats API           |
+
+
 ⚙️ 4. Operational Workflow
 
 Onboarding: Secure linking of Amazon Flex profiles and UPI-based payout IDs.
