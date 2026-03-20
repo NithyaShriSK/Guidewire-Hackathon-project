@@ -36,26 +36,18 @@ Instant Settlement: Pro-rated compensation is pushed immediately to the worker's
 
 🔄 Workflow (Step-by-Step Flow)
 
-User Starts Delivery Block
-        ↓
-System Activates Monitoring Engine
-        ↓
-Fetch Weather + AQI + Traffic Data
-        ↓
-Check Threshold Conditions
-        ↓
-Trigger Detected?
-   ┌───────────────┴───────────────┐
-   │ YES                           │ NO
-   ↓                               ↓
-Run 3-Layer Validation          Continue Monitoring
-   ↓
-Calculate Remaining Block Time
-   ↓
-Compute Payout
-   ↓
-Send Instant Payment
+flowchart TD
+    A[User Starts Delivery Block] --> B[System Activates Monitoring Engine]
+    B --> C[Fetch Weather + AQI + Traffic Data]
+    C --> D[Check Threshold Conditions]
+    D --> E{Trigger Detected?}
 
+    E -->|YES| F[Run 3-Layer Validation]
+    E -->|NO| B
+
+    F --> G[Calculate Remaining Block Time]
+    G --> H[Compute Payout]
+    H --> I[Send Instant Payment]
 🧠 5. AI Defense & Anti-Spoofing Architecture
 
 To survive large-scale fraud ("Market Crashes"), GigShield employs a 3-Layer Defense Strategy:
@@ -82,26 +74,21 @@ Every payout request is passed through an AI scoring engine:
 
 💣 Market Crash Handling (Flowchart)
 
-Mass Claims Triggered (500 Users)
-        ↓
-External Data Validation
-        ↓
-Is Disruption Real?
-   ┌───────────────┴───────────────┐
-   │ YES                           │ NO
-   ↓                               ↓
-Behavior Validation            Reject All Claims
-   ↓
-Network Pattern Analysis
-   ↓
-Fraud Ring Detected?
-   ┌───────────────┴───────────────┐
-   │ YES                           │ NO
-   ↓                               ↓
-Throttle + Flag Accounts       Process Legit Claims
-   ↓
-Protect Liquidity Pool
+flowchart TD
+    A[Mass Claims Triggered (500 Users)] --> B[External Data Validation]
+    B --> C{Is Disruption Real?}
 
+    C -->|NO| D[Reject All Claims]
+    C -->|YES| E[Behavior Validation]
+
+    E --> F[Network Pattern Analysis]
+    F --> G{Fraud Ring Detected?}
+
+    G -->|YES| H[Throttle + Flag Accounts]
+    G -->|NO| I[Process Legit Claims]
+
+    H --> J[Protect Liquidity Pool]
+    I --> J
 🛠️ 6. Technical Stack
 
 Frontend: React.js, Tailwind CSS (Mobile-responsive UI)
