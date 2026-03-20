@@ -118,3 +118,27 @@ Multi-Platform Expansion: Integration with Swiggy, Zomato, and Uber.
 Analytics Dashboard: Providing workers with "Earnings at Risk" insights.
 
 GigShield — Protecting Work. Preventing Fraud. Powering Trust.
+
+🎨 9. UI/UX Prototype (Figma Design)
+
+To visualize the GigShield user experience, we have designed a complete mobile-responsive UI prototype covering onboarding, dashboard, claims, and verification workflows.
+
+🔗 **Figma Design Link:**  
+https://www.figma.com/design/B6ifyhqy4hdmvEMsvTUGfU/Guidewire-hack?node-id=1-2&t=ZiBLq45mqzUyYGFy-0
+
+📱 **App Screens Preview:**
+
+- Login & Authentication  
+- User Dashboard & Weekly Summary  
+- Premium Selection & Coverage Plans  
+- Auto Claim & Manual Claim Center  
+- Claim Status & Transaction History  
+- Location Verification System  
+- Manual Claim Submission Form  
+
+✨ **Design Goal:**  
+To deliver a clean, intuitive, and trust-driven interface that allows gig workers to easily monitor risks, understand coverage, and receive payouts seamlessly.
+
+🖼️ **UI Screens:**
+
+![GigShield UI Screens](assets/UIimage.png)
