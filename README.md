@@ -2,7 +2,7 @@
 Subtitle: Defending Income. Detecting Fraud. Surviving Market Volatility.
 
 📌 1. Executive Summary
-GigShield is an AI-driven parametric insurance platform engineered to provide a financial safety net for gig workers—specifically Amazon Flex delivery partners. By leveraging real-world environmental data (weather, pollution, traffic), GigShield automates income protection. Unlike traditional insurance, it utilizes a Zero-Touch Model, triggering instant payouts without manual claims or human verification.
+GigShield is an AI-driven parametric insurance platform engineered to provide a financial safety net for gig workers—specifically Amazon Flex delivery partners. By leveraging real-world environmental data (weather, pollution, traffic), GigShield automates income protection. Unlike traditional insurance, it utilizes a Zero-Touch Model, triggering instant payouts without manual claims or human verification.In strict accordance with the Guidewire DEVTrails 2026 constraints, GigShield exclusively covers loss of income. This platform does not provide coverage for health insurance, life insurance, personal accidents, or vehicle repairs/maintenance.
 
 🚨 2. The Problem Landscape
 
@@ -58,6 +58,13 @@ flowchart TD
     G --> H[Compute Payout]
     H --> I[Send Payment]
 ```
+## Why a Weekly Pricing Model?
+ Gig workers operate on high-frequency, week-to-week payout cycles. A traditional monthly or annual premium is financially inaccessible and misaligned with their cash flow. Our weekly model (e.g., ₹20/week) ensures the "shield" is always active during their working days without requiring long-term capital commitment.
+ ## Platform:
+  Mobile-Responsive Web/Hybrid App 
+   Justification: Delivery partners rely entirely on their smartphones for work. A mobile-first approach is essential for:
+* Real-time GPS/Location validation.Seamless integration with UPI-based payout apps.
+* Low-friction access—workers can check "Earnings at Risk" or coverage status between delivery drops without needing a desktop.
 🧠 5. AI Defense & Anti-Spoofing Architecture
 
 To survive large-scale fraud ("Market Crashes"), GigShield employs a 3-Layer Defense Strategy:
