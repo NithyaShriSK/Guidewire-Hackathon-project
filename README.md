@@ -141,4 +141,6 @@ To deliver a clean, intuitive, and trust-driven interface that allows gig worker
 
 🖼️ **UI Screens:**
 
-![GigShield UI Screens](assets/UIimage.png)
+<p align="center">
+  <img src="UIimage.png" alt="GigShield UI Screens" width="300"/>
+</p>
