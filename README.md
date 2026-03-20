@@ -54,10 +54,11 @@ flowchart TD
 
 To survive large-scale fraud ("Market Crashes"), GigShield employs a 3-Layer Defense Strategy:
 
-Layer | Mechanism | Objective
-1. Truth Verification | Multi-source API cross-referencing | Validates if the environmental disruption is objectively real.
-2. Behavioral Validation | Package Scan Anchoring | Matches delivery progress/timestamps against physical reality, not just GPS.
-3. Network Intelligence | Cluster Analysis | Detects coordinated movement anomalies and simultaneous claims from single IPs/locations.
+| Layer | Mechanism | Objective |
+|------|----------|----------|
+| Truth Verification | Multi-source API cross-referencing | Validates if the environmental disruption is objectively real |
+| Behavioral Validation | Package Scan Anchoring | Matches delivery progress and timestamps against physical reality, not just GPS |
+| Network Intelligence | Cluster Analysis | Detects coordinated movement anomalies and simultaneous claims from single IPs or locations |
 
 🧮 Fraud Risk Scoring (FRS)
 
