@@ -1,0 +1,26 @@
+# Development Dockerfile for GigShield Backend
+FROM node:18-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Install nodemon globally for development
+RUN npm install -g nodemon
+
+# Copy package.json and package-lock.json
+COPY package*.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy source code
+COPY . .
+
+# Create logs directory
+RUN mkdir -p logs
+
+# Expose the port the app runs on
+EXPOSE 5000
+
+# Start the application with nodemon for development
+CMD ["npm", "run", "dev"]
