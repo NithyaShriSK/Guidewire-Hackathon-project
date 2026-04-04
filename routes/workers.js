@@ -6,23 +6,124 @@ const { authenticateWorker, authenticateAdmin, authorize } = require('../middlew
 const PREMIUM_TIERS = {
   basic: {
     label: 'Basic',
-    weeklyAmount: 20,
+    baseWeeklyAmount: 20,
     weeklyCoverageLimit: 2000,
     maxPayoutPerClaim: 500
   },
   medium: {
     label: 'Medium',
-    weeklyAmount: 35,
+    baseWeeklyAmount: 35,
     weeklyCoverageLimit: 3500,
     maxPayoutPerClaim: 850
   },
   high: {
     label: 'High',
-    weeklyAmount: 50,
+    baseWeeklyAmount: 50,
     weeklyCoverageLimit: 5000,
     maxPayoutPerClaim: 1200
   }
 };
+
+const CITY_RISK_OVERRIDES = {
+  mumbai: { weather: 0.22, pollution: 0.09, traffic: 0.18 },
+  chennai: { weather: 0.2, pollution: 0.08, traffic: 0.14 },
+  delhi: { weather: 0.08, pollution: 0.24, traffic: 0.19 },
+  bangalore: { weather: 0.1, pollution: 0.1, traffic: 0.2 },
+  bengaluru: { weather: 0.1, pollution: 0.1, traffic: 0.2 },
+  hyderabad: { weather: 0.09, pollution: 0.1, traffic: 0.16 },
+  kolkata: { weather: 0.16, pollution: 0.14, traffic: 0.14 },
+  pune: { weather: 0.08, pollution: 0.09, traffic: 0.15 }
+};
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function roundToNearestFive(value) {
+  return Math.max(5, Math.round(value / 5) * 5);
+}
+
+function computeDynamicPricing(worker) {
+  const city = (worker.personalInfo?.address?.city || worker.locationTracking?.workingRegion || '').trim().toLowerCase();
+  const cityRisk = CITY_RISK_OVERRIDES[city] || { weather: 0.1, pollution: 0.08, traffic: 0.12 };
+  const hours = worker.workInfo?.platforms?.[0]?.averageWeeklyHours || 40;
+  const earnings = worker.workInfo?.platforms?.[0]?.averageDailyEarnings || worker.financialInfo?.weeklyIncomeRange?.max / 5 || 500;
+  const zoneCount = Math.max(1, worker.workInfo?.preferredWorkingZones?.length || 1);
+  const baseRiskScore = clamp(worker.riskProfile?.baseRiskScore ?? 0.5, 0, 1);
+  const locationRiskFactors = worker.riskProfile?.locationRiskFactors || {};
+
+  const weatherRisk = clamp(cityRisk.weather + (locationRiskFactors.floodRisk || 0) * 0.35, 0, 0.35);
+  const pollutionRisk = clamp(cityRisk.pollution + (locationRiskFactors.pollutionRisk || 0) * 0.35, 0, 0.3);
+  const trafficRisk = clamp(cityRisk.traffic + (locationRiskFactors.trafficRisk || 0) * 0.35, 0, 0.3);
+  const incomeLoad = clamp((earnings - 500) / 2500, 0, 0.22);
+  const workIntensity = clamp((hours - 35) / 45, 0, 0.18);
+  const zoneSpread = clamp((zoneCount - 1) * 0.03, 0, 0.12);
+  const workerRisk = clamp(baseRiskScore * 0.18, 0, 0.18);
+
+  const totalRiskLoad = clamp(
+    weatherRisk + pollutionRisk + trafficRisk + incomeLoad + workIntensity + zoneSpread + workerRisk,
+    0,
+    0.85
+  );
+  const riskMultiplier = 1 + totalRiskLoad;
+
+  const reasons = [
+    { label: 'Weather exposure', impact: weatherRisk },
+    { label: 'Pollution exposure', impact: pollutionRisk },
+    { label: 'Traffic exposure', impact: trafficRisk },
+    { label: 'Income dependence', impact: incomeLoad },
+    { label: 'Work intensity', impact: workIntensity },
+    { label: 'Zone spread', impact: zoneSpread },
+    { label: 'Worker risk score', impact: workerRisk }
+  ]
+    .filter((item) => item.impact > 0.01)
+    .sort((a, b) => b.impact - a.impact)
+    .slice(0, 4)
+    .map((item) => ({
+      label: item.label,
+      impactPercent: Math.round(item.impact * 100)
+    }));
+
+  return {
+    city: worker.personalInfo?.address?.city || worker.locationTracking?.workingRegion || 'Primary zone',
+    riskMultiplier: Number(riskMultiplier.toFixed(2)),
+    riskLoadPercent: Math.round(totalRiskLoad * 100),
+    drivers: reasons,
+    scorecard: {
+      weatherRisk: Math.round(weatherRisk * 100),
+      pollutionRisk: Math.round(pollutionRisk * 100),
+      trafficRisk: Math.round(trafficRisk * 100),
+      incomeLoad: Math.round(incomeLoad * 100),
+      workIntensity: Math.round(workIntensity * 100)
+    }
+  };
+}
+
+function buildDynamicPremiumTiers(worker) {
+  const pricing = computeDynamicPricing(worker);
+  const availableTiers = Object.entries(PREMIUM_TIERS).reduce((acc, [tierKey, tier]) => {
+    const dynamicAmount = roundToNearestFive(tier.baseWeeklyAmount * pricing.riskMultiplier);
+    acc[tierKey] = {
+      ...tier,
+      weeklyAmount: dynamicAmount,
+      baseWeeklyAmount: tier.baseWeeklyAmount,
+      riskAdjustedAmount: dynamicAmount,
+      pricingModel: {
+        type: 'dynamic',
+        riskMultiplier: pricing.riskMultiplier,
+        riskLoadPercent: pricing.riskLoadPercent,
+        city: pricing.city,
+        drivers: pricing.drivers
+      }
+    };
+    return acc;
+  }, {});
+
+  return {
+    availableTiers,
+    pricing
+  };
+}
 
 async function ensureWorkerCoveragePolicy(worker, selectedTier) {
   await Policy.updateMany(
@@ -89,8 +190,8 @@ async function ensureWorkerCoveragePolicy(worker, selectedTier) {
         coverageZones: [coverageZone]
       },
       premium: {
-        baseAmount: selectedTier.weeklyAmount,
-        riskAdjustedAmount: selectedTier.weeklyAmount,
+        baseAmount: selectedTier.baseWeeklyAmount,
+        riskAdjustedAmount: selectedTier.riskAdjustedAmount || selectedTier.weeklyAmount,
         finalAmount: selectedTier.weeklyAmount,
         paymentFrequency: 'weekly',
         nextPaymentDue: worker.premium.nextPaymentDue
@@ -117,8 +218,8 @@ async function ensureWorkerCoveragePolicy(worker, selectedTier) {
     policy.coverage.maxPayoutPerWeek = selectedTier.weeklyCoverageLimit;
     policy.coverage.coverageHours = worker.workInfo?.typicalWorkingHours || policy.coverage.coverageHours;
     policy.coverage.coverageZones = [coverageZone];
-    policy.premium.baseAmount = selectedTier.weeklyAmount;
-    policy.premium.riskAdjustedAmount = selectedTier.weeklyAmount;
+    policy.premium.baseAmount = selectedTier.baseWeeklyAmount;
+    policy.premium.riskAdjustedAmount = selectedTier.riskAdjustedAmount || selectedTier.weeklyAmount;
     policy.premium.finalAmount = selectedTier.weeklyAmount;
     policy.premium.nextPaymentDue = worker.premium.nextPaymentDue;
     policy.status.current = 'active';
@@ -347,7 +448,7 @@ router.put('/location', authenticateWorker, async (req, res) => {
 router.get('/premium/status', authenticateWorker, async (req, res) => {
   try {
     const workerId = req.worker._id;
-    const worker = await Worker.findById(workerId).select('premium status').lean();
+    const worker = await Worker.findById(workerId).select('premium status personalInfo workInfo financialInfo riskProfile locationTracking').lean();
 
     if (!worker) {
       return res.status(404).json({
@@ -360,7 +461,8 @@ router.get('/premium/status', authenticateWorker, async (req, res) => {
     const weekNumber = getISO8601WeekNumber(today);
     const isOverdue = worker.premium.nextPaymentDue && new Date(worker.premium.nextPaymentDue) < today;
     const canClaimInsurance = Boolean(worker.premium.currentWeekPaid) && worker.status.subscriptionStatus === 'active' && !isOverdue;
-    const currentTier = PREMIUM_TIERS[worker.premium.planType || 'basic'] || PREMIUM_TIERS.basic;
+    const { availableTiers, pricing } = buildDynamicPremiumTiers(worker);
+    const currentTier = availableTiers[worker.premium.planType || 'basic'] || availableTiers.basic;
     
     res.json({
       success: true,
@@ -374,10 +476,12 @@ router.get('/premium/status', authenticateWorker, async (req, res) => {
         nextPaymentDue: worker.premium.nextPaymentDue,
         lastPaymentDate: worker.premium.lastPaymentDate,
         missedPayments: worker.premium.missedPayments,
+        totalPaid: worker.premium.totalPaid || 0,
         paymentHistory: worker.premium.paymentHistory || [],
         subscriptionStatus: worker.status.subscriptionStatus,
         canClaimInsurance,
-        availableTiers: PREMIUM_TIERS
+        availableTiers,
+        dynamicPricing: pricing
       }
     });
   } catch (error) {
@@ -410,7 +514,8 @@ router.post('/premium/pay-weekly', authenticateWorker, async (req, res) => {
       });
     }
 
-    const selectedTier = PREMIUM_TIERS[planType];
+    const { availableTiers, pricing } = buildDynamicPremiumTiers(worker);
+    const selectedTier = availableTiers[planType];
     if (!selectedTier) {
       return res.status(400).json({
         success: false,
@@ -465,8 +570,8 @@ router.post('/premium/pay-weekly', authenticateWorker, async (req, res) => {
           'status.current': 'active',
           'status.activatedAt': new Date(),
           'status.lastPaymentAt': new Date(),
-          'premium.baseAmount': selectedTier.weeklyAmount,
-          'premium.riskAdjustedAmount': selectedTier.weeklyAmount,
+          'premium.baseAmount': selectedTier.baseWeeklyAmount,
+          'premium.riskAdjustedAmount': selectedTier.riskAdjustedAmount || selectedTier.weeklyAmount,
           'premium.finalAmount': selectedTier.weeklyAmount,
           'coverage.maxPayoutPerWeek': selectedTier.weeklyCoverageLimit,
           'coverage.maxPayoutPerClaim': selectedTier.maxPayoutPerClaim,
@@ -483,6 +588,7 @@ router.post('/premium/pay-weekly', authenticateWorker, async (req, res) => {
         amount,
         planType,
         weeklyCoverageLimit: selectedTier.weeklyCoverageLimit,
+        pricingModel: pricing,
         paymentDate: new Date(),
         nextPaymentDue: nextWeekDate,
         canClaimInsurance: true

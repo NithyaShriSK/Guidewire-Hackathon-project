@@ -74,10 +74,10 @@ router.get('/dashboard/stats', authenticateAdmin, async (req, res) => {
       activePolicies: await Policy.countDocuments({ 'status.current': 'active' }),
       totalClaims: await Claim.countDocuments(),
       pendingClaims: await Claim.countDocuments({ 'status.current': 'initiated' }),
-      approvedClaims: await Claim.countDocuments({ 'status.current': 'approved' }),
+      approvedClaims: await Claim.countDocuments({ 'status.current': { $in: ['approved', 'paid'] } }),
       rejectedClaims: await Claim.countDocuments({ 'status.current': 'rejected' }),
       totalPayoutAmount: await Claim.aggregate([
-        { $match: { 'status.current': 'approved' } },
+        { $match: { 'financial.payoutStatus': 'completed' } },
         { $group: { _id: null, total: { $sum: '$financial.payoutAmount' } } }
       ]).then(result => result[0]?.total || 0)
     };

@@ -6,14 +6,68 @@ const { v4: uuidv4 } = require('uuid');
 // Worker Registration
 const registerWorker = async (req, res) => {
   try {
-    const { personalInfo, security } = req.body;
+    const { personalInfo, security, workInfo, financialInfo } = req.body;
+    const timestampSeed = Date.now().toString();
+    const normalizedPersonalInfo = {
+      firstName: personalInfo.firstName.trim(),
+      lastName: personalInfo.lastName.trim(),
+      email: personalInfo.email.toLowerCase(),
+      phone: String(personalInfo.phone),
+      dateOfBirth: personalInfo.dateOfBirth,
+      aadhaarNumber: String(personalInfo.aadhaarNumber),
+      address: {
+        street: personalInfo.address?.street,
+        city: personalInfo.address?.city,
+        state: personalInfo.address?.state,
+        pincode: String(personalInfo.address?.pincode),
+        coordinates: {
+          latitude: Number(personalInfo.address?.coordinates?.latitude),
+          longitude: Number(personalInfo.address?.coordinates?.longitude)
+        }
+      }
+    };
+
+    const normalizedWorkInfo = {
+      platforms: (workInfo?.platforms || []).map((platform) => ({
+        name: platform.name || 'Amazon Flex',
+        workerId: platform.workerId,
+        startDate: platform.startDate || new Date(),
+        averageDailyEarnings: Number(platform.averageDailyEarnings),
+        averageWeeklyHours: Number(platform.averageWeeklyHours)
+      })),
+      preferredWorkingZones: (workInfo?.preferredWorkingZones || []).map((zone) => ({
+        name: zone.name,
+        coordinates: {
+          latitude: Number(zone.coordinates?.latitude),
+          longitude: Number(zone.coordinates?.longitude),
+          radius: Number(zone.coordinates?.radius || 5)
+        }
+      })),
+      typicalWorkingHours: {
+        start: workInfo?.typicalWorkingHours?.start,
+        end: workInfo?.typicalWorkingHours?.end
+      }
+    };
+
+    const normalizedFinancialInfo = {
+      upiId: financialInfo?.upiId,
+      bankAccount: {
+        accountNumber: String(financialInfo?.bankAccount?.accountNumber),
+        ifscCode: String(financialInfo?.bankAccount?.ifscCode || '').toUpperCase(),
+        accountHolderName: financialInfo?.bankAccount?.accountHolderName
+      },
+      weeklyIncomeRange: {
+        min: Number(financialInfo?.weeklyIncomeRange?.min),
+        max: Number(financialInfo?.weeklyIncomeRange?.max)
+      }
+    };
 
     // Check if worker already exists
     const existingWorker = await Worker.findOne({
       $or: [
-        { 'personalInfo.email': personalInfo.email },
-        { 'personalInfo.phone': personalInfo.phone },
-        { 'personalInfo.aadhaarNumber': personalInfo.aadhaarNumber }
+        { 'personalInfo.email': normalizedPersonalInfo.email },
+        { 'personalInfo.phone': normalizedPersonalInfo.phone },
+        { 'personalInfo.aadhaarNumber': normalizedPersonalInfo.aadhaarNumber }
       ]
     });
 
@@ -29,14 +83,21 @@ const registerWorker = async (req, res) => {
     const hashedPassword = await bcrypt.hash(security.password, salt);
 
     // Generate referral code
-    const referralCode = `GS${personalInfo.phone.slice(-4)}${Date.now().toString().slice(-4)}`.toUpperCase();
+    const referralCode = `FMP${normalizedPersonalInfo.phone.slice(-4)}${timestampSeed.slice(-4)}`.toUpperCase();
 
     // Create worker
     const worker = new Worker({
-      personalInfo,
+      personalInfo: normalizedPersonalInfo,
+      workInfo: normalizedWorkInfo,
+      financialInfo: normalizedFinancialInfo,
       security: {
-        password: hashedPassword,
-        ...security
+        ...security,
+        password: hashedPassword
+      },
+      status: {
+        accountStatus: 'active',
+        subscriptionStatus: 'inactive',
+        onboardingStep: 'completed'
       },
       metadata: {
         referralCode

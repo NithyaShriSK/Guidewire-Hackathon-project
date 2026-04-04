@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '../contexts/AuthContext';
 
-const brandLogo = `${process.env.PUBLIC_URL}/fixmypay-logo.svg`;
+const brandLogo = `${process.env.PUBLIC_URL}/fixmypay-logo.png`;
 
 const Login = () => {
   const navigate = useNavigate();
@@ -42,7 +42,7 @@ const Login = () => {
       <div className="mx-auto flex min-h-[calc(100vh-6rem)] max-w-md items-center">
         <div className="w-full space-y-6">
           <div className="brand-shell px-6 py-8 text-center">
-            <img src={brandLogo} alt="FixMyPay" className="mx-auto h-14 w-auto" />
+            <img src={brandLogo} alt="FixMyPay" className="mx-auto h-32 w-auto" />
             <h2 className="mt-6 text-3xl font-extrabold text-gray-900">Sign in to FixMyPay</h2>
             <p className="mt-2 text-sm text-gray-600">
               Parametric AI income protection for Amazon Flex and the gig economy.

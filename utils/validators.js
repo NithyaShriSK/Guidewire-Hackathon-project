@@ -21,75 +21,132 @@ const handleValidationErrors = (req, res, next) => {
 const validateWorkerRegistration = [
   body('personalInfo.firstName')
     .trim()
-    .isLength({ min: 2, max: 50 })
-    .withMessage('First name must be between 2 and 50 characters')
-    .matches(/^[a-zA-Z\s]+$/)
-    .withMessage('First name can only contain letters and spaces'),
-    
+    .isLength({ min: 1, max: 50 })
+    .withMessage('First name must be between 1 and 50 characters')
+    .matches(/^[a-zA-Z.\s'-]+$/)
+    .withMessage('First name contains unsupported characters'),
+
   body('personalInfo.lastName')
     .trim()
-    .isLength({ min: 2, max: 50 })
-    .withMessage('Last name must be between 2 and 50 characters')
-    .matches(/^[a-zA-Z\s]+$/)
-    .withMessage('Last name can only contain letters and spaces'),
-    
+    .isLength({ min: 1, max: 50 })
+    .withMessage('Last name must be between 1 and 50 characters')
+    .matches(/^[a-zA-Z.\s'-]+$/)
+    .withMessage('Last name contains unsupported characters'),
+
   body('personalInfo.email')
     .isEmail()
     .normalizeEmail()
     .withMessage('Please provide a valid email address'),
-    
+
   body('personalInfo.phone')
     .matches(/^[6-9]\d{9}$/)
     .withMessage('Please provide a valid 10-digit Indian mobile number'),
-    
+
   body('personalInfo.dateOfBirth')
     .isISO8601()
-    .withMessage('Please provide a valid date of birth')
-    .custom((value) => {
-      const age = new Date().getFullYear() - new Date(value).getFullYear();
-      if (age < 18 || age > 65) {
-        throw new Error('Age must be between 18 and 65 years');
-      }
-      return true;
-    }),
-    
+    .withMessage('Please provide a valid date of birth'),
+
   body('personalInfo.aadhaarNumber')
     .matches(/^\d{12}$/)
     .withMessage('Aadhaar number must be exactly 12 digits'),
-    
+
   body('personalInfo.address.street')
     .trim()
     .isLength({ min: 5, max: 200 })
     .withMessage('Street address must be between 5 and 200 characters'),
-    
+
   body('personalInfo.address.city')
     .trim()
     .isLength({ min: 2, max: 50 })
     .withMessage('City must be between 2 and 50 characters'),
-    
+
   body('personalInfo.address.state')
     .trim()
     .isLength({ min: 2, max: 50 })
     .withMessage('State must be between 2 and 50 characters'),
-    
+
   body('personalInfo.address.pincode')
     .matches(/^\d{6}$/)
     .withMessage('Pincode must be exactly 6 digits'),
-    
+
   body('personalInfo.address.coordinates.latitude')
     .isFloat({ min: -90, max: 90 })
     .withMessage('Latitude must be between -90 and 90'),
-    
+
   body('personalInfo.address.coordinates.longitude')
     .isFloat({ min: -180, max: 180 })
     .withMessage('Longitude must be between -180 and 180'),
-    
+
+  body('workInfo.platforms')
+    .isArray({ min: 1 })
+    .withMessage('At least one platform must be specified'),
+
+  body('workInfo.platforms.*.workerId')
+    .trim()
+    .notEmpty()
+    .withMessage('Platform worker ID is required'),
+
+  body('workInfo.platforms.*.averageDailyEarnings')
+    .isFloat({ min: 100, max: 10000 })
+    .withMessage('Daily earnings must be between 100 and 10000'),
+
+  body('workInfo.platforms.*.averageWeeklyHours')
+    .isFloat({ min: 1, max: 80 })
+    .withMessage('Weekly hours must be between 1 and 80'),
+
+  body('workInfo.preferredWorkingZones')
+    .isArray({ min: 1 })
+    .withMessage('At least one working zone must be specified'),
+
+  body('workInfo.typicalWorkingHours.start')
+    .matches(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/)
+    .withMessage('Start time must be in HH:MM format'),
+
+  body('workInfo.typicalWorkingHours.end')
+    .matches(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/)
+    .withMessage('End time must be in HH:MM format'),
+
+  body('financialInfo.upiId')
+    .matches(/^[a-zA-Z0-9._-]+@[a-zA-Z]{2,}$/)
+    .withMessage('Please provide a valid UPI ID'),
+
+  body('financialInfo.bankAccount.accountNumber')
+    .matches(/^\d{9,18}$/)
+    .withMessage('Account number must be between 9 and 18 digits'),
+
+  body('financialInfo.bankAccount.ifscCode')
+    .trim()
+    .customSanitizer((value) => String(value || '').toUpperCase())
+    .matches(/^[A-Z]{4}0[A-Z0-9]{6}$/)
+    .withMessage('Please provide a valid IFSC code'),
+
+  body('financialInfo.bankAccount.accountHolderName')
+    .trim()
+    .isLength({ min: 2, max: 100 })
+    .withMessage('Account holder name must be between 2 and 100 characters')
+    .matches(/^[a-zA-Z.\s'-]+$/)
+    .withMessage('Account holder name contains unsupported characters'),
+
+  body('financialInfo.weeklyIncomeRange.min')
+    .isFloat({ min: 500, max: 50000 })
+    .withMessage('Minimum weekly income must be between 500 and 50000'),
+
+  body('financialInfo.weeklyIncomeRange.max')
+    .isFloat({ min: 500, max: 50000 })
+    .withMessage('Maximum weekly income must be between 500 and 50000')
+    .custom((value, { req }) => {
+      if (Number(value) < Number(req.body?.financialInfo?.weeklyIncomeRange?.min)) {
+        throw new Error('Maximum weekly income must be greater than or equal to minimum weekly income');
+      }
+      return true;
+    }),
+
   body('security.password')
     .isLength({ min: 8 })
     .withMessage('Password must be at least 8 characters long')
-    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
-    .withMessage('Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character'),
-    
+    .isString()
+    .withMessage('Password must be valid text'),
+
   handleValidationErrors
 ];
 

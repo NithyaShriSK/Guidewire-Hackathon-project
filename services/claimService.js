@@ -92,6 +92,32 @@ class ClaimService {
   // Get validation data from multiple sources
   async getValidationData(triggerData) {
     try {
+      if (triggerData.simulationMode) {
+        const simulationSnapshot = triggerData.type === 'extreme_weather'
+          ? triggerData.detectedValues?.weather
+          : triggerData.type === 'high_pollution'
+            ? triggerData.detectedValues?.pollution
+            : triggerData.detectedValues?.traffic;
+
+        return {
+          apiSources: simulationSnapshot ? [{
+            name: 'simulation_event',
+            data: simulationSnapshot,
+            timestamp: new Date(),
+            matchesTrigger: true,
+            confidence: 1
+          }] : [],
+          consensusScore: simulationSnapshot ? 1 : 0,
+          gpsValidation: {
+            isLocationValid: true,
+            distanceFromTrigger: 0
+          },
+          activityValidation: {
+            isActivityConsistent: true
+          }
+        };
+      }
+
       const validationData = {
         apiSources: [],
         consensusScore: 0,
@@ -255,11 +281,15 @@ class ClaimService {
       const totalLoss = hoursLost * hourlyRate;
       
       // Apply policy limits
-      const payoutAmount = Math.min(
+      const remainingWeeklyLimit = Math.max(
+        0,
+        (policy.coverage.maxPayoutPerWeek || 0) - (policy.claims?.totalPayoutAmount || 0)
+      );
+      const payoutAmount = Math.max(0, Math.min(
         totalLoss,
         policy.coverage.maxPayoutPerClaim,
-        policy.coverage.maxPayoutPerWeek - policy.claims.totalPayoutAmount
-      );
+        remainingWeeklyLimit
+      ));
 
       return {
         estimatedLoss: {

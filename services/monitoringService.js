@@ -431,7 +431,7 @@ class MonitoringService {
           traffic: {
             congestionLevel: Math.round(congestionLevel * 10) / 10,
             averageSpeed: Math.round(averageSpeed * 10) / 10,
-            trafficVolume: congestionLevel > 7 ? 'high' : congestionLevel > 4 ? 'medium' : 'low',
+            trafficVolume: Math.max(100, Math.round(congestionLevel * 120)),
             incidents: [], // Would need separate API call for incidents
             publicTransportStatus: {
               buses: 'normal',
@@ -530,6 +530,7 @@ class MonitoringService {
     try {
       const activePolicies = await Policy.findActive(workerId);
       const pollution = pollutionData.data.pollution;
+      const triggeredClaims = [];
 
       for (const policy of activePolicies) {
         const coveredRisks = policy.coverage.coveredRisks.filter(risk => 
@@ -539,21 +540,35 @@ class MonitoringService {
         for (const risk of coveredRisks) {
           const thresholds = risk.thresholds.pollution;
           
-          if (pollution.aqi > thresholds.aqi ||
-              pollution.pm25 > thresholds.pm25) {
+          if (pollution.aqi >= thresholds.aqi ||
+              pollution.pm25 >= thresholds.pm25) {
             
             // Trigger claim
-            await this.triggerClaim(policy._id, {
+            const claim = await this.triggerClaim(policy._id, {
               type: 'high_pollution',
               location: zone.coordinates,
               detectedValues: { pollution },
               thresholds
             });
+
+            if (claim) {
+              triggeredClaims.push({
+                policyId: policy._id,
+                policyNumber: policy.policyNumber,
+                claimId: claim._id,
+                payoutAmount: claim.financial?.payoutAmount || 0,
+                aqi: pollution.aqi,
+                threshold: thresholds.aqi
+              });
+            }
           }
         }
       }
+
+      return triggeredClaims;
     } catch (error) {
       console.error('Error checking pollution triggers:', error);
+      return [];
     }
   }
 
@@ -562,6 +577,7 @@ class MonitoringService {
     try {
       const activePolicies = await Policy.findActive(workerId);
       const traffic = trafficData.data.traffic;
+      const triggeredClaims = [];
 
       for (const policy of activePolicies) {
         const coveredRisks = policy.coverage.coveredRisks.filter(risk => 
@@ -571,21 +587,35 @@ class MonitoringService {
         for (const risk of coveredRisks) {
           const thresholds = risk.thresholds.traffic;
           
-          if (traffic.congestionLevel > thresholds.congestionLevel ||
-              traffic.averageSpeed < thresholds.averageSpeed) {
+          if (traffic.congestionLevel >= thresholds.congestionLevel ||
+              traffic.averageSpeed <= thresholds.averageSpeed) {
             
             // Trigger claim
-            await this.triggerClaim(policy._id, {
+            const claim = await this.triggerClaim(policy._id, {
               type: 'traffic_congestion',
               location: zone.coordinates,
               detectedValues: { traffic },
               thresholds
             });
+
+            if (claim) {
+              triggeredClaims.push({
+                policyId: policy._id,
+                policyNumber: policy.policyNumber,
+                claimId: claim._id,
+                payoutAmount: claim.financial?.payoutAmount || 0,
+                congestionLevel: traffic.congestionLevel,
+                threshold: thresholds.congestionLevel
+              });
+            }
           }
         }
       }
+
+      return triggeredClaims;
     } catch (error) {
       console.error('Error checking traffic triggers:', error);
+      return [];
     }
   }
 
@@ -627,14 +657,6 @@ class MonitoringService {
         source: 'live_location'
       };
 
-      const weatherData = await this.fetchWeatherData(zone.coordinates);
-      if (!weatherData) {
-        throw new Error('Unable to fetch weather data for current location');
-      }
-
-      await this.saveMonitoringData('weather', weatherData, zone);
-
-      const weather = weatherData.data.weather;
       const activePolicies = await Policy.findActive(workerId);
       const rainfallThresholds = activePolicies
         .flatMap((policy) => policy.coverage.coveredRisks
@@ -644,12 +666,64 @@ class MonitoringService {
             policyNumber: policy.policyNumber,
             rainfallThreshold: risk.thresholds?.weather?.rainfall ?? 15
           })));
+      const pollutionThresholds = activePolicies
+        .flatMap((policy) => policy.coverage.coveredRisks
+          .filter((risk) => risk.type === 'high_pollution' && risk.isActive)
+          .map((risk) => ({
+            policyId: policy._id,
+            policyNumber: policy.policyNumber,
+            aqiThreshold: risk.thresholds?.pollution?.aqi ?? 400
+          })));
+      const trafficThresholds = activePolicies
+        .flatMap((policy) => policy.coverage.coveredRisks
+          .filter((risk) => risk.type === 'traffic_congestion' && risk.isActive)
+          .map((risk) => ({
+            policyId: policy._id,
+            policyNumber: policy.policyNumber,
+            congestionThreshold: risk.thresholds?.traffic?.congestionLevel ?? 8,
+            averageSpeedThreshold: risk.thresholds?.traffic?.averageSpeed ?? 5
+          })));
 
       const lowestRainfallThreshold = rainfallThresholds.length > 0
         ? Math.min(...rainfallThresholds.map((item) => item.rainfallThreshold))
         : null;
+      const lowestPollutionThreshold = pollutionThresholds.length > 0
+        ? Math.min(...pollutionThresholds.map((item) => item.aqiThreshold))
+        : null;
+      const lowestTrafficThreshold = trafficThresholds.length > 0
+        ? Math.min(...trafficThresholds.map((item) => item.congestionThreshold))
+        : null;
+      const highestTrafficSpeedThreshold = trafficThresholds.length > 0
+        ? Math.max(...trafficThresholds.map((item) => item.averageSpeedThreshold))
+        : null;
 
-      const triggeredClaims = await this.checkWeatherTriggers(workerId, weatherData, zone);
+      const weatherData = await this.fetchWeatherData(zone.coordinates);
+      const pollutionData = await this.fetchPollutionData(zone.coordinates);
+      const trafficData = await this.fetchTrafficData(zone.coordinates);
+
+      if (!weatherData && !pollutionData && !trafficData) {
+        throw new Error('Unable to fetch threat data for current location');
+      }
+
+      if (weatherData) {
+        await this.saveMonitoringData('weather', weatherData, zone);
+      }
+      if (pollutionData) {
+        await this.saveMonitoringData('pollution', pollutionData, zone);
+      }
+      if (trafficData) {
+        await this.saveMonitoringData('traffic', trafficData, zone);
+      }
+
+      const weather = weatherData?.data?.weather || null;
+      const pollution = pollutionData?.data?.pollution || null;
+      const traffic = trafficData?.data?.traffic || null;
+
+      const triggeredClaims = [
+        ...(weatherData ? await this.checkWeatherTriggers(workerId, weatherData, zone) : []),
+        ...(pollutionData ? await this.checkPollutionTriggers(workerId, pollutionData, zone) : []),
+        ...(trafficData ? await this.checkTrafficTriggers(workerId, trafficData, zone) : [])
+      ];
 
       return {
         location: {
@@ -658,13 +732,41 @@ class MonitoringService {
           name: zone.name
         },
         weather,
+        pollution,
+        traffic,
         rainfallThresholds,
+        pollutionThresholds,
+        trafficThresholds,
         rainfallStatus: {
-          exceeded: lowestRainfallThreshold !== null ? weather.rainfall > lowestRainfallThreshold : false,
-          currentRainfall: weather.rainfall,
+          exceeded: weather && lowestRainfallThreshold !== null ? weather.rainfall >= lowestRainfallThreshold : false,
+          currentRainfall: weather?.rainfall ?? null,
           threshold: lowestRainfallThreshold,
           shortfall: lowestRainfallThreshold !== null
-            ? Math.max(0, lowestRainfallThreshold - weather.rainfall)
+            ? Math.max(0, lowestRainfallThreshold - (weather?.rainfall ?? 0))
+            : null
+        },
+        pollutionStatus: {
+          exceeded: pollution && lowestPollutionThreshold !== null ? pollution.aqi >= lowestPollutionThreshold : false,
+          currentAqi: pollution?.aqi ?? null,
+          threshold: lowestPollutionThreshold,
+          shortfall: lowestPollutionThreshold !== null
+            ? Math.max(0, lowestPollutionThreshold - (pollution?.aqi ?? 0))
+            : null
+        },
+        trafficStatus: {
+          exceeded: traffic && (
+            (lowestTrafficThreshold !== null && traffic.congestionLevel >= lowestTrafficThreshold) ||
+            (highestTrafficSpeedThreshold !== null && traffic.averageSpeed <= highestTrafficSpeedThreshold)
+          ),
+          currentCongestion: traffic?.congestionLevel ?? null,
+          currentAverageSpeed: traffic?.averageSpeed ?? null,
+          congestionThreshold: lowestTrafficThreshold,
+          averageSpeedThreshold: highestTrafficSpeedThreshold,
+          congestionShortfall: lowestTrafficThreshold !== null
+            ? Math.max(0, lowestTrafficThreshold - (traffic?.congestionLevel ?? 0))
+            : null,
+          speedGap: highestTrafficSpeedThreshold !== null && typeof traffic?.averageSpeed === 'number'
+            ? Math.max(0, traffic.averageSpeed - highestTrafficSpeedThreshold)
             : null
         },
         triggeredClaims

@@ -56,8 +56,8 @@ router.post('/check-current-location', authenticateWorker, async (req, res) => {
 
     res.json({
       success: true,
-      message: result.rainfallStatus.exceeded
-        ? 'Rainfall threshold exceeded. Automatic payout evaluation completed.'
+      message: result.rainfallStatus.exceeded || result.pollutionStatus?.exceeded || result.trafficStatus?.exceeded
+        ? 'One or more threat thresholds exceeded. Automatic payout evaluation completed.'
         : 'Current location checked successfully.',
       data: result
     });

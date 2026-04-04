@@ -5,6 +5,7 @@ import {
   UsersIcon,
   ExclamationTriangleIcon,
   PlayIcon,
+  ShieldCheckIcon,
   ArrowRightOnRectangleIcon,
   Bars3Icon,
   XMarkIcon,
@@ -12,7 +13,7 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 
-const brandLogo = `${process.env.PUBLIC_URL}/fixmypay-logo.svg`;
+const brandLogo = `${process.env.PUBLIC_URL}/fixmypay-logo.png`;
 
 const AdminLayout = () => {
   const { user, logout } = useAuth();
@@ -24,6 +25,7 @@ const AdminLayout = () => {
   const navigation = [
     { name: 'Dashboard', href: '/admin/dashboard', icon: ChartBarIcon },
     { name: 'Workers', href: '/admin/workers', icon: UsersIcon },
+    { name: 'Policy & Terms', href: '/admin/policies', icon: ShieldCheckIcon },
     { name: 'Claims', href: '/admin/claims', icon: ExclamationTriangleIcon },
     { name: 'Simulation', href: '/admin/simulation', icon: PlayIcon },
   ];
@@ -39,7 +41,7 @@ const AdminLayout = () => {
         <div className="fixed inset-0 bg-slate-900/45" onClick={() => setSidebarOpen(false)} />
         <div className="fixed inset-y-0 left-0 flex w-72 flex-col bg-white/95 backdrop-blur">
           <div className="flex items-center justify-between border-b border-white/70 px-4 py-4">
-            <img src={brandLogo} alt="FixMyPay Admin" className="h-10 w-auto" />
+            <img src={brandLogo} alt="FixMyPay Admin" className="h-16 w-auto" />
             <button
               onClick={() => setSidebarOpen(false)}
               className="rounded-md p-2 text-gray-400 hover:bg-primary-50 hover:text-primary-700"
@@ -100,7 +102,7 @@ const AdminLayout = () => {
       <div className="hidden lg:fixed lg:inset-y-0 lg:flex lg:w-72 lg:flex-col">
         <div className="flex grow flex-col overflow-y-auto border-r border-white/70 bg-white/95 pt-5 pb-4 backdrop-blur">
           <div className="px-4">
-            <img src={brandLogo} alt="FixMyPay Admin" className="h-11 w-auto" />
+            <img src={brandLogo} alt="FixMyPay Admin" className="h-20 w-auto" />
           </div>
           <nav className="mt-8 flex-1 space-y-1 px-3">
             {navigation.map((item) => {
@@ -169,7 +171,7 @@ const AdminLayout = () => {
             >
               <Bars3Icon className="h-6 w-6" />
             </button>
-            <img src={brandLogo} alt="FixMyPay Admin" className="h-9 w-auto" />
+            <img src={brandLogo} alt="FixMyPay Admin" className="h-14 w-auto" />
             <div className="w-8" />
           </div>
         </div>

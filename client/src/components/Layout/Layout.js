@@ -7,11 +7,12 @@ import {
   Bars3Icon,
   XMarkIcon,
   CreditCardIcon,
+  ShieldCheckIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 
-const brandLogo = `${process.env.PUBLIC_URL}/fixmypay-logo.svg`;
+const brandLogo = `${process.env.PUBLIC_URL}/fixmypay-logo.png`;
 
 const Layout = () => {
   const { user, logout } = useAuth();
@@ -23,6 +24,7 @@ const Layout = () => {
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
     { name: 'Weekly Premium', href: '/weekly-premium', icon: CreditCardIcon },
+    { name: 'Policy & Terms', href: '/policies', icon: ShieldCheckIcon },
     { name: 'Claims', href: '/claims', icon: ExclamationTriangleIcon },
   ];
 
@@ -37,7 +39,7 @@ const Layout = () => {
         <div className="fixed inset-0 bg-slate-900/45" onClick={() => setSidebarOpen(false)} />
         <div className="fixed inset-y-0 left-0 flex w-72 flex-col bg-white/95 backdrop-blur">
           <div className="flex items-center justify-between border-b border-white/70 px-4 py-4">
-            <img src={brandLogo} alt="FixMyPay" className="h-10 w-auto" />
+            <img src={brandLogo} alt="FixMyPay" className="h-16 w-auto" />
             <button
               onClick={() => setSidebarOpen(false)}
               className="rounded-md p-2 text-gray-400 hover:bg-primary-50 hover:text-primary-700"
@@ -97,7 +99,7 @@ const Layout = () => {
       <div className="hidden lg:fixed lg:inset-y-0 lg:flex lg:w-72 lg:flex-col">
         <div className="flex grow flex-col overflow-y-auto border-r border-white/70 bg-white/95 pt-5 pb-4 backdrop-blur">
           <div className="px-4">
-            <img src={brandLogo} alt="FixMyPay" className="h-11 w-auto" />
+            <img src={brandLogo} alt="FixMyPay" className="h-20 w-auto" />
           </div>
           <nav className="mt-8 flex-1 space-y-1 px-3">
             {navigation.map((item) => {
@@ -165,7 +167,7 @@ const Layout = () => {
             >
               <Bars3Icon className="h-6 w-6" />
             </button>
-            <img src={brandLogo} alt="FixMyPay" className="h-9 w-auto" />
+            <img src={brandLogo} alt="FixMyPay" className="h-14 w-auto" />
             <div className="w-8" />
           </div>
         </div>

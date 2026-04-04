@@ -3,6 +3,7 @@ import {
   CheckCircleIcon,
   CreditCardIcon,
 } from '@heroicons/react/24/outline';
+import { Link } from 'react-router-dom';
 import { workerAPI } from '../services/api';
 import toast from 'react-hot-toast';
 
@@ -37,6 +38,7 @@ const WeeklyPremium = () => {
 
   const tierEntries = useMemo(() => Object.entries(premiumStatus?.availableTiers || {}), [premiumStatus]);
   const chosenTier = premiumStatus?.availableTiers?.[selectedTier];
+  const dynamicPricing = premiumStatus?.dynamicPricing;
 
   const handlePaymentSubmit = async (e) => {
     e.preventDefault();
@@ -89,21 +91,21 @@ const WeeklyPremium = () => {
 
   return (
     <div className="space-y-6">
-      <div className="bg-gradient-to-r from-slate-900 to-sky-700 rounded-2xl p-6 text-white">
+      <div className="overflow-hidden rounded-3xl bg-gradient-to-r from-primary-800 via-primary-700 to-success-600 p-6 text-white shadow-[0_24px_50px_-30px_rgba(20,71,177,0.95)]">
         <h1 className="text-2xl font-bold">Weekly Premium</h1>
-        <p className="mt-2 text-sky-100">
-          Pick a weekly FixMyPay plan, accept coverage terms, and keep your payout protection active.
+        <p className="mt-2 text-primary-50/90">
+          Pick a weekly FixMyPay plan with dynamic pricing based on your location, work pattern, and risk exposure.
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="card lg:col-span-2">
+        <div className="card lg:col-span-3">
           <div className="card-header">
             <h3 className="text-lg font-semibold text-gray-900">Coverage Status</h3>
             <p className="text-sm text-gray-600">Your current plan, eligibility, and next payment date.</p>
           </div>
           <div className="card-content space-y-5">
-            <div className={`rounded-2xl p-5 ${canClaimInsurance ? 'bg-green-50 border border-green-200' : 'bg-amber-50 border border-amber-200'}`}>
+            <div className={`rounded-3xl p-5 ${canClaimInsurance ? 'bg-success-50 border border-success-200' : 'bg-warning-50 border border-warning-200'}`}>
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-sm uppercase tracking-wide text-gray-500">Current Plan</p>
@@ -112,7 +114,7 @@ const WeeklyPremium = () => {
                     Weekly premium Rs {premiumStatus?.weeklyAmount || 0} • Weekly coverage limit Rs {premiumStatus?.weeklyCoverageLimit || 0}
                   </p>
                 </div>
-                <span className={`inline-flex rounded-full px-4 py-2 text-sm font-semibold ${canClaimInsurance ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
+                <span className={`inline-flex rounded-full px-4 py-2 text-sm font-semibold ${canClaimInsurance ? 'bg-success-100 text-success-800' : 'bg-warning-100 text-warning-800'}`}>
                   {canClaimInsurance ? 'Coverage Active' : 'Payment Needed'}
                 </span>
               </div>
@@ -124,6 +126,34 @@ const WeeklyPremium = () => {
               <SummaryTile label="Total Paid" value={`Rs ${premiumStatus?.totalPaid || 0}`} />
             </div>
 
+            {dynamicPricing ? (
+              <div className="rounded-3xl border border-primary-200 bg-primary-50 p-5">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm uppercase tracking-wide text-primary-700">Dynamic pricing engine</p>
+                    <p className="mt-1 text-lg font-semibold text-primary-950">
+                      Risk multiplier {dynamicPricing.riskMultiplier}x for {dynamicPricing.city}
+                    </p>
+                    <p className="mt-1 text-sm text-primary-900">
+                      Your quote updates using weather exposure, pollution, traffic, work hours, earnings, and zone spread.
+                    </p>
+                  </div>
+                  <div className="rounded-2xl bg-white/80 px-4 py-3 text-sm text-primary-900 shadow-sm">
+                    Total risk load: {dynamicPricing.riskLoadPercent}%
+                  </div>
+                </div>
+                {dynamicPricing.drivers?.length ? (
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {dynamicPricing.drivers.map((driver) => (
+                      <div key={driver.label} className="rounded-2xl bg-white px-4 py-3 text-sm text-slate-700 shadow-sm">
+                        {driver.label}: +{driver.impactPercent}%
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
             {!premiumStatus?.currentWeekPaid ? (
               <button onClick={() => setShowPaymentForm(true)} className="btn-primary">
                 <CreditCardIcon className="h-5 w-5 mr-2" />
@@ -133,21 +163,6 @@ const WeeklyPremium = () => {
           </div>
         </div>
 
-        <div className="card">
-          <div className="card-header">
-            <h3 className="text-lg font-semibold text-gray-900">Coverage Terms</h3>
-          </div>
-          <div className="card-content space-y-3 text-sm text-gray-700">
-            <div className="rounded-xl bg-green-50 p-4">
-              <p className="font-semibold text-green-900">Covered</p>
-              <p className="mt-1">Income disruption caused by heavy rain, severe AQI spikes, heat thresholds, and qualifying traffic disruption.</p>
-            </div>
-            <div className="rounded-xl bg-red-50 p-4">
-              <p className="font-semibold text-red-900">Not Covered</p>
-              <p className="mt-1">War, health insurance, life insurance, personal accidents, and vehicle repair or maintenance costs.</p>
-            </div>
-          </div>
-        </div>
       </div>
 
       <div className="card">
@@ -161,17 +176,27 @@ const WeeklyPremium = () => {
               key={tierKey}
               type="button"
               onClick={() => setSelectedTier(tierKey)}
-              className={`rounded-2xl border p-5 text-left transition ${selectedTier === tierKey ? 'border-sky-500 bg-sky-50 shadow-sm' : 'border-gray-200 bg-white hover:border-gray-300'}`}
+              className={`rounded-3xl border p-5 text-left transition ${selectedTier === tierKey ? 'border-primary-300 bg-primary-50 shadow-sm ring-1 ring-primary-100' : 'border-gray-200 bg-white hover:border-primary-200'}`}
             >
               <div className="flex items-center justify-between">
                 <p className="text-lg font-semibold text-gray-900">{tier.label}</p>
-                {selectedTier === tierKey ? <CheckCircleIcon className="h-5 w-5 text-sky-600" /> : null}
+                {selectedTier === tierKey ? <CheckCircleIcon className="h-5 w-5 text-success-600" /> : null}
               </div>
               <p className="mt-3 text-3xl font-bold text-gray-900">Rs {tier.weeklyAmount}</p>
               <p className="mt-1 text-sm text-gray-600">per week</p>
-              <div className="mt-4 rounded-xl bg-gray-50 p-3 text-sm text-gray-700">
+              <p className="mt-1 text-xs text-gray-500">
+                Base Rs {tier.baseWeeklyAmount} • Dynamic factor {tier.pricingModel?.riskMultiplier}x
+              </p>
+              <div className="mt-4 rounded-2xl bg-gray-50 p-3 text-sm text-gray-700">
                 Weekly payout limit: Rs {tier.weeklyCoverageLimit}
               </div>
+              {tier.pricingModel?.drivers?.length ? (
+                <div className="mt-4 space-y-2 text-sm text-gray-600">
+                  {tier.pricingModel.drivers.map((driver) => (
+                    <p key={`${tierKey}-${driver.label}`}>{driver.label}: +{driver.impactPercent}%</p>
+                  ))}
+                </div>
+              ) : null}
             </button>
           ))}
         </div>
@@ -183,10 +208,23 @@ const WeeklyPremium = () => {
             <h3 className="text-lg font-semibold text-gray-900">Confirm Weekly Payment</h3>
           </div>
           <form onSubmit={handlePaymentSubmit} className="card-content space-y-5">
+            <div className="rounded-2xl border border-primary-200 bg-primary-50 p-4">
+              <p className="font-semibold text-primary-900">Review full policy terms before payment</p>
+              <p className="mt-1 text-sm text-primary-800">
+                Read the separate Policy and Terms tab before confirming any weekly premium payment.
+              </p>
+              <Link to="/policies" className="btn-secondary mt-4">
+                Open Policy and Terms
+              </Link>
+            </div>
+
             <div className="rounded-2xl bg-slate-50 p-4">
               <p className="font-semibold text-slate-900">{chosenTier.label} Plan</p>
               <p className="text-sm text-slate-600 mt-1">
                 Pay Rs {chosenTier.weeklyAmount} now for a weekly payout limit of Rs {chosenTier.weeklyCoverageLimit}.
+              </p>
+              <p className="text-sm text-slate-600 mt-1">
+                Base premium Rs {chosenTier.baseWeeklyAmount} • Dynamic multiplier {chosenTier.pricingModel?.riskMultiplier}x
               </p>
             </div>
 
@@ -224,7 +262,7 @@ const WeeklyPremium = () => {
                 className="mt-1 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
               />
               <span className="text-sm text-amber-900">
-                I understand this weekly plan only covers income disruption from approved parametric triggers and does not cover war, health, life, personal accident, or vehicle repair/maintenance losses.
+                I confirm that I reviewed the full Policy and Terms page and accept the coverage conditions, exclusions, and weekly payout limits before making this payment.
               </span>
             </label>
 

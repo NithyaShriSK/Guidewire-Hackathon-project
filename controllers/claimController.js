@@ -99,10 +99,12 @@ const getClaimAnalytics = async (req, res) => {
 
     const analytics = {
       totalClaims: claimList.length,
-      approvedClaims: claimList.filter(c => c.status.current === 'approved').length,
+      approvedClaims: claimList.filter(c => ['approved', 'paid'].includes(c.status.current)).length,
       rejectedClaims: claimList.filter(c => c.status.current === 'rejected').length,
-      pendingClaims: claimList.filter(c => c.status.current === 'pending').length,
-      totalPayoutAmount: claimList.reduce((sum, c) => sum + (c.financial.payoutAmount || 0), 0),
+      pendingClaims: claimList.filter(c => ['initiated', 'validating', 'under_review'].includes(c.status.current)).length,
+      totalPayoutAmount: claimList
+        .filter(c => c.financial?.payoutStatus === 'completed')
+        .reduce((sum, c) => sum + (c.financial.payoutAmount || 0), 0),
       averageProcessingTime: claimList.length > 0 
         ? claimList.reduce((sum, c) => sum + (c.status.processingTime || 0), 0) / claimList.length 
         : 0,

@@ -5,6 +5,76 @@ const monitoringService = require('../services/monitoringService');
 const claimService = require('../services/claimService');
 const { Worker, Policy, MonitoringData, ActivityLog, Claim } = require('../models');
 
+const DEMO_COVERED_RISKS = [
+  {
+    type: 'extreme_weather',
+    isActive: true,
+    thresholds: {
+      weather: {
+        rainfall: 15,
+        windSpeed: 50,
+        temperature: 42
+      }
+    }
+  },
+  {
+    type: 'high_pollution',
+    isActive: true,
+    thresholds: {
+      pollution: {
+        aqi: 400,
+        pm25: 250
+      }
+    }
+  },
+  {
+    type: 'traffic_congestion',
+    isActive: true,
+    thresholds: {
+      traffic: {
+        congestionLevel: 8,
+        averageSpeed: 5
+      }
+    }
+  }
+];
+
+async function syncSimulationPolicy(policy, worker, coverageZone) {
+  policy.coverage = policy.coverage || {};
+  policy.premium = policy.premium || {};
+  policy.status = policy.status || {};
+  policy.monitoring = policy.monitoring || {};
+  policy.metadata = policy.metadata || {};
+
+  policy.coverage.coveredRisks = DEMO_COVERED_RISKS;
+  policy.coverage.maxPayoutPerClaim = policy.coverage.maxPayoutPerClaim || 500;
+  policy.coverage.maxPayoutPerWeek = Math.max(policy.coverage.maxPayoutPerWeek || 0, 2000);
+  policy.coverage.deductible = 0;
+  policy.coverage.coverageHours = worker.workInfo?.typicalWorkingHours || policy.coverage.coverageHours || { start: '08:00', end: '20:00' };
+  policy.coverage.coverageZones = [coverageZone];
+  policy.premium.baseAmount = policy.premium.baseAmount || 20;
+  policy.premium.riskAdjustedAmount = policy.premium.riskAdjustedAmount || 20;
+  policy.premium.finalAmount = policy.premium.finalAmount || 20;
+  policy.premium.paymentFrequency = 'weekly';
+  policy.premium.nextPaymentDue = worker.premium.nextPaymentDue;
+  policy.status.current = 'active';
+  policy.status.activatedAt = policy.status.activatedAt || new Date();
+  policy.status.expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  policy.status.lastPaymentAt = new Date();
+  policy.monitoring.isActive = true;
+  policy.monitoring.lastMonitoredAt = new Date();
+  policy.monitoring.monitoringZones = [{
+    coordinates: coverageZone.coordinates,
+    radius: coverageZone.coordinates.radius,
+    priority: 'high'
+  }];
+  policy.metadata.updatedAt = new Date();
+  policy.metadata.termsAcceptedAt = policy.metadata.termsAcceptedAt || new Date();
+
+  await policy.save();
+  return policy;
+}
+
 async function ensureDemoReadyWorker(worker) {
   worker.locationTracking = worker.locationTracking || {};
   worker.premium = worker.premium || {};
@@ -70,10 +140,10 @@ async function ensureDemoReadyWorker(worker) {
       { _id: { $in: olderPolicies.map((policy) => policy._id) } },
       { $set: { 'status.current': 'inactive', 'monitoring.isActive': false, 'metadata.updatedAt': new Date() } }
     );
-    return currentPolicy;
+    return syncSimulationPolicy(currentPolicy, worker, coverageZone);
   }
   if (activePolicies.length > 0) {
-    return activePolicies[0];
+    return syncSimulationPolicy(activePolicies[0], worker, coverageZone);
   }
 
   const demoPolicy = await Policy.create({
@@ -81,39 +151,7 @@ async function ensureDemoReadyWorker(worker) {
     policyNumber: `GS-DEMO-${Date.now()}`,
     policyType: 'weekly',
     coverage: {
-      coveredRisks: [
-        {
-          type: 'extreme_weather',
-          isActive: true,
-          thresholds: {
-            weather: {
-              rainfall: 15,
-              windSpeed: 50,
-              temperature: 42
-            }
-          }
-        },
-        {
-          type: 'high_pollution',
-          isActive: true,
-          thresholds: {
-            pollution: {
-              aqi: 400,
-              pm25: 250
-            }
-          }
-        },
-        {
-          type: 'traffic_congestion',
-          isActive: true,
-          thresholds: {
-            traffic: {
-              congestionLevel: 8,
-              averageSpeed: 5
-            }
-          }
-        }
-      ],
+      coveredRisks: DEMO_COVERED_RISKS,
       maxPayoutPerClaim: 500,
       maxPayoutPerWeek: 2000,
       deductible: 0,
@@ -157,12 +195,30 @@ async function ensureDemoReadyWorker(worker) {
 }
 
 async function ensurePaidSimulationClaim({ claim, policy, worker, triggerType, location, simulationData, triggerThresholds }) {
-  const computedFinancial = await claimService.calculateFinancialLoss(policy, {
+  const latestPolicy = await Policy.findById(policy._id);
+  const computedFinancial = await claimService.calculateFinancialLoss(latestPolicy || policy, {
     type: triggerType,
     detectedValues: triggerType === 'extreme_weather' ? { weather: simulationData } :
       triggerType === 'high_pollution' ? { pollution: simulationData } :
       { traffic: simulationData }
   });
+  const weeklyLimitReached = computedFinancial.payoutAmount <= 0;
+
+  if (weeklyLimitReached) {
+    if (claim) {
+      claim.status.current = 'rejected';
+      claim.status.rejectedAt = new Date();
+      claim.financial.payoutAmount = 0;
+      claim.financial.estimatedLoss = computedFinancial.estimatedLoss;
+      claim.financial.payoutStatus = 'rejected';
+      claim.financial.payoutFailureReason = 'Weekly payout limit reached';
+      claim.audit.decisionLogic.automatedDecision = 'rejected';
+      await claim.save();
+      return claim;
+    }
+
+    return null;
+  }
 
   if (claim) {
     claim.status.current = 'paid';
@@ -384,7 +440,7 @@ router.post('/traffic', authenticateAdmin, async (req, res) => {
         traffic: {
           congestionLevel: trafficData.congestionLevel || 8,
           averageSpeed: trafficData.averageSpeed || 5,
-          trafficVolume: 'high',
+          trafficVolume: trafficData.trafficVolume || 950,
           incidents: [],
           publicTransportStatus: {
             buses: 'delayed',
@@ -590,7 +646,7 @@ router.post('/run', authenticateAdmin, async (req, res) => {
         simulationData = {
           congestionLevel: 9,
           averageSpeed: 3,
-          trafficVolume: 'high'
+          trafficVolume: 950
         };
         triggerType = 'traffic_congestion';
         break;
@@ -604,7 +660,13 @@ router.post('/run', authenticateAdmin, async (req, res) => {
 
     // Create monitoring data
     const matchingRisk = policy.coverage.coveredRisks.find((risk) => risk.type === triggerType);
-    const triggerThresholds = matchingRisk?.thresholds || {};
+    const triggerThresholds = matchingRisk?.thresholds || (
+      triggerType === 'extreme_weather'
+        ? { weather: DEMO_COVERED_RISKS.find((risk) => risk.type === 'extreme_weather').thresholds.weather }
+        : triggerType === 'high_pollution'
+          ? { pollution: DEMO_COVERED_RISKS.find((risk) => risk.type === 'high_pollution').thresholds.pollution }
+          : { traffic: DEMO_COVERED_RISKS.find((risk) => risk.type === 'traffic_congestion').thresholds.traffic }
+    );
 
     const monitoringEntry = new MonitoringData({
       source: {
@@ -645,12 +707,12 @@ router.post('/run', authenticateAdmin, async (req, res) => {
       simulationMode: true
     });
     const thresholdBreached = triggerType === 'extreme_weather'
-      ? simulationData.rainfall > (triggerThresholds.weather?.rainfall ?? Infinity)
+      ? simulationData.rainfall >= (triggerThresholds.weather?.rainfall ?? Infinity)
       : triggerType === 'high_pollution'
-        ? simulationData.aqi > (triggerThresholds.pollution?.aqi ?? Infinity)
+        ? simulationData.aqi >= (triggerThresholds.pollution?.aqi ?? Infinity)
         : (
-            simulationData.congestionLevel > (triggerThresholds.traffic?.congestionLevel ?? Infinity) ||
-            simulationData.averageSpeed < (triggerThresholds.traffic?.averageSpeed ?? -Infinity)
+            simulationData.congestionLevel >= (triggerThresholds.traffic?.congestionLevel ?? Infinity) ||
+            simulationData.averageSpeed <= (triggerThresholds.traffic?.averageSpeed ?? -Infinity)
           );
 
     const finalizedClaimDocument = thresholdBreached
@@ -696,9 +758,17 @@ router.post('/run', authenticateAdmin, async (req, res) => {
       {
         title: 'Payout result',
         detail: refreshedClaim
-          ? `Payout status is ${refreshedClaim.financial.payoutStatus}.`
+          ? refreshedClaim.financial.payoutStatus === 'rejected' && refreshedClaim.financial.payoutFailureReason
+            ? `${refreshedClaim.financial.payoutFailureReason}.`
+            : `Payout status is ${refreshedClaim.financial.payoutStatus}.`
           : 'No payout attempt was made.',
-        status: refreshedClaim?.financial?.payoutStatus === 'completed' ? 'completed' : refreshedClaim ? 'in_progress' : 'blocked'
+        status: refreshedClaim?.financial?.payoutStatus === 'completed'
+          ? 'completed'
+          : refreshedClaim?.financial?.payoutStatus === 'rejected'
+            ? 'blocked'
+            : refreshedClaim
+              ? 'in_progress'
+              : 'blocked'
       }
     ];
 
@@ -747,7 +817,13 @@ router.post('/run', authenticateAdmin, async (req, res) => {
           thresholdBreached,
           payoutAttempted,
           payoutOccurred,
-          label: payoutOccurred ? 'Payout Occurred' : payoutAttempted ? 'Claim Created - Payout Pending/Failed' : 'No Payout'
+          label: payoutOccurred
+            ? 'Payout Occurred'
+            : refreshedClaim?.financial?.payoutStatus === 'rejected'
+              ? 'Weekly Limit Reached - No Payout'
+              : payoutAttempted
+                ? 'Claim Created - Payout Pending/Failed'
+                : 'No Payout'
         }
       }
     });

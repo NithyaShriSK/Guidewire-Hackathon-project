@@ -21,8 +21,13 @@ const defaultThreatStatus = {
   hasChecked: false,
   location: null,
   weather: null,
+  pollution: null,
+  traffic: null,
   rainfallStatus: null,
+  pollutionStatus: null,
+  trafficStatus: null,
   triggeredClaims: [],
+  focus: 'rainfall',
 };
 
 const Dashboard = () => {
@@ -49,27 +54,24 @@ const Dashboard = () => {
     try {
       setLoading(true);
 
-      const [claimsResponse, monitoringResponse, profileResponse, premiumResponse] = await Promise.all([
+      const [claimsResponse, claimAnalyticsResponse, monitoringResponse, profileResponse, premiumResponse] = await Promise.all([
         claimAPI.getWorkerClaims({ limit: 5 }),
+        claimAPI.getClaimAnalytics(),
         monitoringAPI.getMonitoringStatus(),
         workerAPI.getProfile(),
         workerAPI.getPremiumStatus(),
       ]);
 
       const claims = claimsResponse.data.data.claims;
+      const claimAnalytics = claimAnalyticsResponse.data.data;
       const profile = profileResponse.data.data;
       const premium = premiumResponse.data.data;
 
-      const approvedClaims = claims.filter((claim) => claim.status.current === 'approved' || claim.status.current === 'paid').length;
-      const totalPayout = claims
-        .filter((claim) => claim.status.current === 'approved' || claim.status.current === 'paid')
-        .reduce((sum, claim) => sum + (claim.financial.payoutAmount || 0), 0);
-
       setStats({
         activePolicies: premium.weeklyCoverageLimit || 0,
-        totalClaims: claims.length,
-        approvedClaims,
-        totalPayout,
+        totalClaims: claimAnalytics.totalClaims || 0,
+        approvedClaims: claimAnalytics.approvedClaims || 0,
+        totalPayout: claimAnalytics.totalPayoutAmount || 0,
       });
 
       setRecentClaims(claims);
@@ -136,9 +138,9 @@ const Dashboard = () => {
     }
   };
 
-  const handleThreatCheck = async () => {
+  const handleThreatCheck = async (focus = 'rainfall') => {
     try {
-      setThreatStatus((prev) => ({ ...prev, loading: true }));
+      setThreatStatus((prev) => ({ ...prev, loading: true, focus }));
       const coords = await syncCurrentLocation();
       const response = await monitoringAPI.checkCurrentLocationThreat(coords);
       const data = response.data.data;
@@ -148,12 +150,17 @@ const Dashboard = () => {
         hasChecked: true,
         location: data.location,
         weather: data.weather,
+        pollution: data.pollution,
+        traffic: data.traffic,
         rainfallStatus: data.rainfallStatus,
+        pollutionStatus: data.pollutionStatus,
+        trafficStatus: data.trafficStatus,
         triggeredClaims: data.triggeredClaims || [],
+        focus,
       });
 
       if (data.triggeredClaims?.length) {
-        toast.success('Rainfall threshold breached. Automatic payout flow triggered.');
+        toast.success('Threat threshold breached. Automatic payout flow triggered.');
         fetchDashboardData();
       } else {
         toast.success('Location checked. No payout trigger right now.');
@@ -191,11 +198,11 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-6">
-      <div className="bg-gradient-to-r from-primary-600 to-sky-700 rounded-lg p-6 text-white">
+      <div className="overflow-hidden rounded-3xl bg-gradient-to-r from-primary-700 via-primary-600 to-success-600 p-6 text-white shadow-[0_24px_50px_-30px_rgba(20,71,177,0.95)]">
         <h1 className="text-2xl font-bold">
           Worker Control Panel for {user?.personalInfo?.firstName}
         </h1>
-        <p className="mt-2 text-primary-100">
+        <p className="mt-2 max-w-3xl text-primary-50/90">
           Keep monitoring on, track your weekly coverage plan, and watch automatic payouts trigger when disruption thresholds are breached.
         </p>
       </div>
@@ -208,7 +215,7 @@ const Dashboard = () => {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="card p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h3 className="text-lg font-medium text-gray-900">Live Location Monitoring</h3>
@@ -220,7 +227,7 @@ const Dashboard = () => {
               onClick={toggleMonitoring}
               className={`px-4 py-2 rounded-md font-medium transition-colors ${
                 monitoringStatus
-                  ? 'bg-green-100 text-green-800 hover:bg-green-200'
+                  ? 'bg-success-100 text-success-800 hover:bg-success-200'
                   : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
               }`}
             >
@@ -242,47 +249,53 @@ const Dashboard = () => {
               <button
                 onClick={syncCurrentLocation}
                 disabled={locationSyncing}
-                className="inline-flex items-center rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-70"
+                className="btn-primary disabled:cursor-not-allowed disabled:opacity-70"
               >
                 <MapPinIcon className="mr-2 h-4 w-4" />
                 {locationSyncing ? 'Syncing location...' : 'Use My Current Location'}
               </button>
               <button
-                onClick={handleThreatCheck}
+                onClick={() => handleThreatCheck('rainfall')}
                 disabled={threatStatus.loading || locationSyncing}
-                className="inline-flex items-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+                className="btn-secondary disabled:cursor-not-allowed disabled:opacity-70"
               >
                 <CloudIcon className="mr-2 h-4 w-4" />
                 {threatStatus.loading ? 'Checking rainfall risk...' : 'Check Rainfall Threat'}
+              </button>
+              <button
+                onClick={() => handleThreatCheck('traffic')}
+                disabled={threatStatus.loading || locationSyncing}
+                className="btn-secondary disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                <ArrowTrendingUpIcon className="mr-2 h-4 w-4" />
+                {threatStatus.loading ? 'Checking traffic risk...' : 'Check Traffic Threat'}
+              </button>
+              <button
+                onClick={() => handleThreatCheck('pollution')}
+                disabled={threatStatus.loading || locationSyncing}
+                className="btn-secondary disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                <ExclamationTriangleIcon className="mr-2 h-4 w-4" />
+                {threatStatus.loading ? 'Checking pollution risk...' : 'Check Pollution Threat'}
               </button>
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="card p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h3 className="text-lg font-medium text-gray-900">Rainfall Trigger Status</h3>
+              <h3 className="text-lg font-medium text-gray-900">Threat Trigger Status</h3>
               <p className="text-sm text-gray-600 mt-1">
-                The payout engine compares live rainfall against your active parametric threshold.
+                The payout engine compares rainfall, traffic, and pollution against your active parametric thresholds.
               </p>
             </div>
-            {threatStatus.hasChecked ? (
-              threatStatus.rainfallStatus?.exceeded ? (
-                <span className="inline-flex rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-800">
-                  Threshold exceeded
-                </span>
-              ) : (
-                <span className="inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
-                  Within limit
-                </span>
-              )
-            ) : null}
+            {threatStatus.hasChecked ? <ThreatPill threatStatus={threatStatus} /> : null}
           </div>
 
           {!threatStatus.hasChecked ? (
             <div className="mt-8 rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">
-              Run a rainfall check to see whether the current location is in a payout-triggering threat zone.
+              Run a threat check to see whether the current location is in a payout-triggering rainfall, traffic, or pollution zone.
             </div>
           ) : (
             <div className="mt-5 space-y-4">
@@ -293,32 +306,68 @@ const Dashboard = () => {
                   tone={threatStatus.rainfallStatus?.exceeded ? 'danger' : 'default'}
                 />
                 <InfoTile
-                  label="Threshold"
+                  label="Traffic Congestion"
+                  value={threatStatus.traffic?.congestionLevel !== null && threatStatus.traffic?.congestionLevel !== undefined
+                    ? `${threatStatus.traffic.congestionLevel}/10`
+                    : 'Unavailable'}
+                  tone={threatStatus.trafficStatus?.exceeded ? 'danger' : 'default'}
+                />
+                <InfoTile
+                  label="Current AQI"
+                  value={threatStatus.pollution?.aqi !== null && threatStatus.pollution?.aqi !== undefined
+                    ? `${threatStatus.pollution.aqi}`
+                    : 'Unavailable'}
+                  tone={threatStatus.pollutionStatus?.exceeded ? 'danger' : 'default'}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <InfoTile
+                  label="Rainfall Threshold"
                   value={threatStatus.rainfallStatus?.threshold !== null && threatStatus.rainfallStatus?.threshold !== undefined
                     ? `${threatStatus.rainfallStatus.threshold} mm/hr`
                     : 'No active weather cover'}
                 />
                 <InfoTile
+                  label="Traffic Threshold"
+                  value={threatStatus.trafficStatus?.congestionThreshold !== null && threatStatus.trafficStatus?.congestionThreshold !== undefined
+                    ? `${threatStatus.trafficStatus.congestionThreshold}/10`
+                    : 'No active traffic cover'}
+                />
+                <InfoTile
+                  label="AQI Threshold"
+                  value={threatStatus.pollutionStatus?.threshold !== null && threatStatus.pollutionStatus?.threshold !== undefined
+                    ? `${threatStatus.pollutionStatus.threshold}`
+                    : 'No active pollution cover'}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <InfoTile
                   label="Auto Trigger"
                   value={threatStatus.triggeredClaims.length ? 'Payout initiated' : 'Standby'}
                   tone={threatStatus.triggeredClaims.length ? 'success' : 'default'}
                 />
+                <InfoTile
+                  label="Traffic Speed"
+                  value={threatStatus.traffic?.averageSpeed !== null && threatStatus.traffic?.averageSpeed !== undefined
+                    ? `${threatStatus.traffic.averageSpeed} km/hr`
+                    : 'Unavailable'}
+                  tone={threatStatus.trafficStatus?.exceeded ? 'danger' : 'default'}
+                />
+                <InfoTile
+                  label="Focus"
+                  value={formatThreatLabel(threatStatus.focus)}
+                  tone="default"
+                />
               </div>
 
               <div className="rounded-lg bg-slate-50 p-4">
-                <p className="text-sm font-medium text-slate-900">
-                  {threatStatus.rainfallStatus?.exceeded
-                    ? 'Rainfall is above the configured policy threshold for this location.'
-                    : 'Rainfall is still below the configured policy trigger.'}
-                </p>
+                <p className="text-sm font-medium text-slate-900">{getThreatNarrative(threatStatus)}</p>
                 <p className="mt-1 text-sm text-slate-600">
                   {threatStatus.location?.name || 'Live location'} at {formatCoordinates(threatStatus.location)}
                 </p>
-                {threatStatus.rainfallStatus?.shortfall !== null && threatStatus.rainfallStatus?.shortfall !== undefined && !threatStatus.rainfallStatus?.exceeded ? (
-                  <p className="mt-1 text-sm text-slate-600">
-                    Needs {threatStatus.rainfallStatus.shortfall.toFixed(1)} more mm/hr to trigger payout automation.
-                  </p>
-                ) : null}
+                <ThreatGapText threatStatus={threatStatus} />
               </div>
 
               {threatStatus.triggeredClaims.length > 0 ? (
@@ -354,7 +403,7 @@ const Dashboard = () => {
         />
       </div>
 
-      <div className="bg-white rounded-lg shadow">
+      <div className="card">
         <div className="px-6 py-4 border-b border-gray-200">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-medium text-gray-900">Recent Claims</h3>
@@ -374,7 +423,7 @@ const Dashboard = () => {
               <div className="mt-6">
                 <button
                   onClick={handleThreatCheck}
-                  className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700"
+                  className="btn-primary"
                 >
                   <ArrowPathIcon className="mr-2 h-4 w-4" />
                   Run Rainfall Check
@@ -409,9 +458,9 @@ const Dashboard = () => {
                     </div>
                   </div>
                   <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                    claim.status.current === 'approved' || claim.status.current === 'paid' ? 'bg-green-100 text-green-800' :
+                    claim.status.current === 'approved' || claim.status.current === 'paid' ? 'bg-success-100 text-success-800' :
                     claim.status.current === 'rejected' ? 'bg-red-100 text-red-800' :
-                    'bg-yellow-100 text-yellow-800'
+                    'bg-warning-100 text-warning-800'
                   }`}>
                     {claim.status.current}
                   </span>
@@ -427,30 +476,30 @@ const Dashboard = () => {
 
 const StatCard = ({ title, value, icon: Icon, color, trend }) => {
   const colorClasses = {
-    blue: 'bg-blue-500',
-    green: 'bg-green-500',
-    yellow: 'bg-yellow-500',
-    purple: 'bg-violet-500',
+    blue: 'text-primary-700',
+    green: 'text-success-700',
+    yellow: 'text-warning-700',
+    purple: 'text-success-700',
   };
 
   const bgColorClasses = {
-    blue: 'bg-blue-100',
-    green: 'bg-green-100',
-    yellow: 'bg-yellow-100',
-    purple: 'bg-violet-100',
+    blue: 'bg-primary-100',
+    green: 'bg-success-100',
+    yellow: 'bg-warning-100',
+    purple: 'bg-success-100',
   };
 
   return (
-    <div className="bg-white rounded-lg shadow p-6">
+    <div className="card p-6">
       <div className="flex items-center">
         <div className={`p-3 rounded-lg ${bgColorClasses[color]}`}>
-          <Icon className={`h-6 w-6 ${colorClasses[color]} text-white`} />
+          <Icon className={`h-6 w-6 ${colorClasses[color]}`} />
         </div>
         <div className="ml-4 flex-1">
           <p className="text-sm font-medium text-gray-600">{title}</p>
           <p className="text-2xl font-semibold text-gray-900">{value}</p>
         </div>
-        {trend === 'up' ? <ArrowTrendingUpIcon className="h-5 w-5 text-green-500" /> : null}
+        {trend === 'up' ? <ArrowTrendingUpIcon className="h-5 w-5 text-success-500" /> : null}
         {trend === 'down' ? <ArrowTrendingDownIcon className="h-5 w-5 text-red-500" /> : null}
       </div>
     </div>
@@ -460,16 +509,95 @@ const StatCard = ({ title, value, icon: Icon, color, trend }) => {
 const InfoTile = ({ label, value, tone = 'default' }) => {
   const toneClasses = {
     default: 'border-gray-200 bg-white text-gray-900',
-    success: 'border-green-200 bg-green-50 text-green-900',
+    success: 'border-success-200 bg-success-50 text-success-900',
     danger: 'border-red-200 bg-red-50 text-red-900',
   };
 
   return (
-    <div className={`rounded-lg border p-4 ${toneClasses[tone]}`}>
+    <div className={`rounded-2xl border p-4 ${toneClasses[tone]}`}>
       <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
       <p className="mt-2 text-lg font-semibold">{value}</p>
     </div>
   );
+};
+
+const ThreatPill = ({ threatStatus }) => {
+  const anyExceeded = threatStatus.rainfallStatus?.exceeded || threatStatus.pollutionStatus?.exceeded || threatStatus.trafficStatus?.exceeded;
+
+  return anyExceeded ? (
+    <span className="inline-flex rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-800">
+      Threshold exceeded
+    </span>
+  ) : (
+    <span className="inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
+      Within limit
+    </span>
+  );
+};
+
+const ThreatGapText = ({ threatStatus }) => {
+  if (threatStatus.focus === 'traffic') {
+    if (threatStatus.trafficStatus?.exceeded) return null;
+    if (threatStatus.trafficStatus?.congestionShortfall !== null && threatStatus.trafficStatus?.congestionShortfall !== undefined) {
+      return (
+        <p className="mt-1 text-sm text-slate-600">
+          Needs {threatStatus.trafficStatus.congestionShortfall.toFixed(1)} more congestion points or slower traffic to trigger payout automation.
+        </p>
+      );
+    }
+    return null;
+  }
+
+  if (threatStatus.focus === 'pollution') {
+    if (threatStatus.pollutionStatus?.exceeded) return null;
+    if (threatStatus.pollutionStatus?.shortfall !== null && threatStatus.pollutionStatus?.shortfall !== undefined) {
+      return (
+        <p className="mt-1 text-sm text-slate-600">
+          Needs {threatStatus.pollutionStatus.shortfall.toFixed(0)} more AQI points to trigger payout automation.
+        </p>
+      );
+    }
+    return null;
+  }
+
+  if (threatStatus.rainfallStatus?.exceeded) return null;
+  if (threatStatus.rainfallStatus?.shortfall !== null && threatStatus.rainfallStatus?.shortfall !== undefined) {
+    return (
+      <p className="mt-1 text-sm text-slate-600">
+        Needs {threatStatus.rainfallStatus.shortfall.toFixed(1)} more mm/hr to trigger payout automation.
+      </p>
+    );
+  }
+  return null;
+};
+
+const getThreatNarrative = (threatStatus) => {
+  if (threatStatus.focus === 'traffic') {
+    return threatStatus.trafficStatus?.exceeded
+      ? 'Traffic congestion is above the configured policy threshold for this location.'
+      : 'Traffic is still below the configured policy trigger.';
+  }
+
+  if (threatStatus.focus === 'pollution') {
+    return threatStatus.pollutionStatus?.exceeded
+      ? 'Air quality is above the configured policy threshold for this location.'
+      : 'Air quality is still below the configured policy trigger.';
+  }
+
+  return threatStatus.rainfallStatus?.exceeded
+    ? 'Rainfall is above the configured policy threshold for this location.'
+    : 'Rainfall is still below the configured policy trigger.';
+};
+
+const formatThreatLabel = (value) => {
+  switch (value) {
+    case 'traffic':
+      return 'Traffic';
+    case 'pollution':
+      return 'Pollution';
+    default:
+      return 'Rainfall';
+  }
 };
 
 const formatLocation = (location) => {
