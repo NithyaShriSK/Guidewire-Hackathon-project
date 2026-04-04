@@ -151,28 +151,33 @@ const WorkerDetailsModal = ({ worker, onClose }) => {
                 </div>
               </Section>
 
-              <Section title="Policies">
-                {fullDetails?.policies?.length ? (
-                  <div className="space-y-3">
-                    {fullDetails.policies.map((policy) => (
-                      <div key={policy._id} className="rounded-lg border border-gray-200 p-4">
-                        <div className="flex items-center justify-between gap-4">
-                          <div>
-                            <p className="font-medium text-gray-900">{policy.policyNumber}</p>
-                            <p className="text-sm text-gray-600">Type: {policy.policyType}</p>
-                          </div>
-                          <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${policy.status.current === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
-                            {policy.status.current}
-                          </span>
+              <Section title="Coverage">
+                {fullDetails?.currentPolicy ? (
+                  <div className="space-y-4">
+                    <div className="rounded-lg border border-gray-200 p-4">
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <p className="font-medium text-gray-900">{fullDetails.currentPolicy.policyNumber}</p>
+                          <p className="text-sm text-gray-600">Current weekly coverage</p>
                         </div>
-                        <div className="mt-3 text-sm text-gray-600">
-                          Risks: {(policy.coverage?.coveredRisks || []).map((risk) => risk.type).join(', ')}
-                        </div>
+                        <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${fullDetails.currentPolicy.status.current === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                          {fullDetails.currentPolicy.status.current}
+                        </span>
                       </div>
-                    ))}
+                      <div className="mt-3 text-sm text-gray-600">
+                        Risks: {(fullDetails.currentPolicy.coverage?.coveredRisks || []).map((risk) => risk.type).join(', ')}
+                      </div>
+                    </div>
+                    <DetailGrid
+                      items={[
+                        ['Total Policies', fullDetails?.policySummary?.totalPolicies || 0],
+                        ['Active Policies', fullDetails?.policySummary?.activePolicies || 0],
+                        ['Inactive Policies', fullDetails?.policySummary?.inactivePolicies || 0]
+                      ]}
+                    />
                   </div>
                 ) : (
-                  <p className="text-sm text-gray-500">No policies found.</p>
+                  <p className="text-sm text-gray-500">No coverage found.</p>
                 )}
               </Section>
 
