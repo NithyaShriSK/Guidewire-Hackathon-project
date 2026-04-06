@@ -178,8 +178,8 @@ const Login = () => {
           <div className="brand-shell p-4">
             <h3 className="mb-2 text-sm font-medium text-primary-900">Demo Credentials</h3>
             <div className="space-y-1 text-xs text-primary-800">
-              <p><strong>Worker:</strong> worker@fixmypay.com / password123</p>
-              <p><strong>Admin:</strong> admin@fixmypay.com / admin123</p>
+              <p><strong>Worker:</strong> worker@gigshield.com / password123</p>
+              <p><strong>Admin:</strong> admin@gigshield.com / admin123</p>
               <p className="pt-2">
                 Admin demo mode can auto-create a weekly Amazon Flex protection policy if the selected worker has not been configured yet.
               </p>

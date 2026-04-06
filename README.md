@@ -72,6 +72,9 @@ Use the development Docker compose file because it starts everything needed:
 - Frontend
 
 Run:
+npm install
+
+then:
 
 ```bash
 docker compose -f docker-compose.dev.yml up --build

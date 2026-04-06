@@ -8,6 +8,21 @@ require('dotenv').config();
 
 const app = express();
 
+// Configure trust proxy so rate limiting can correctly read client IP behind Docker/reverse proxies.
+const trustProxyValue = process.env.TRUST_PROXY;
+if (trustProxyValue !== undefined) {
+  if (trustProxyValue === 'true') {
+    app.set('trust proxy', true);
+  } else if (trustProxyValue === 'false') {
+    app.set('trust proxy', false);
+  } else {
+    const numericTrustProxy = Number(trustProxyValue);
+    app.set('trust proxy', Number.isNaN(numericTrustProxy) ? trustProxyValue : numericTrustProxy);
+  }
+} else if (process.env.NODE_ENV === 'development') {
+  app.set('trust proxy', 1);
+}
+
 // Security middleware
 app.use(helmet());
 app.use(cors({
