@@ -298,6 +298,21 @@ const MetricCard = ({ label, value, tone }) => {
   );
 };
 
-const formatLabel = (value) => value.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ').replace(/^./, (char) => char.toUpperCase());
+const formatLabel = (value) => {
+  const customLabels = {
+    claimReason: 'Trigger Type',
+    claimHour: 'Event Time',
+    claimsLastWeek: 'Claim Frequency (system tracked)',
+  };
+
+  if (customLabels[value]) {
+    return customLabels[value];
+  }
+
+  return value
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/_/g, ' ')
+    .replace(/^./, (char) => char.toUpperCase());
+};
 
 export default AdminFraudSimulation;

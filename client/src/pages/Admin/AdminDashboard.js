@@ -9,6 +9,16 @@ import {
   ShieldExclamationIcon,
   UsersIcon,
 } from '@heroicons/react/24/outline';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { adminAPI, claimAPI, simulationAPI } from '../../services/api';
 import WorkerDetailsModal from '../../components/Admin/WorkerDetailsModal';
 import toast from 'react-hot-toast';
@@ -24,6 +34,8 @@ const AdminDashboard = () => {
     approvedClaims: 0,
     rejectedClaims: 0,
     totalPayoutAmount: 0,
+    totalPremiumCollected: 0,
+    lossRatio: 0,
   });
   const [fraudStats, setFraudStats] = useState({
     totalClaims: 0,
@@ -104,6 +116,17 @@ const AdminDashboard = () => {
     }
   };
 
+  const likelyClaimChartData = (predictions?.likelyClaimsByType || []).map((item) => ({
+    name: item.label,
+    shortName: item.label
+      .replace(' Disruption', '')
+      .replace('Civil Unrest', 'Unrest'),
+    predictedClaims: item.predictedClaimsNextWeek,
+    historicalSharePercent: item.historicalSharePercent,
+  }));
+
+  const chartPalette = ['#0f766e', '#0ea5e9', '#f59e0b', '#64748b'];
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -132,10 +155,12 @@ const AdminDashboard = () => {
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-lg font-medium text-gray-900 mb-4">Risk and Payout Health</h3>
           <div className="space-y-4">
+            <MetricRow label="Loss Ratio" value={`${stats.lossRatio || 0}%`} tone={Number(stats.lossRatio) > 100 ? 'danger' : Number(stats.lossRatio) > 75 ? 'warning' : 'success'} />
             <MetricRow label="Fraud Rate" value={`${fraudStats.fraudRate}%`} tone={parseFloat(fraudStats.fraudRate) > 5 ? 'danger' : 'success'} />
             <MetricRow label="Manual Review Rate" value={`${fraudStats.manualReviewRate}%`} tone="warning" />
             <MetricRow label="Payout Success Rate" value={`${payoutStats.successRate}%`} tone={parseFloat(payoutStats.successRate) > 95 ? 'success' : 'warning'} />
             <MetricRow label="Average Payout" value={`Rs ${payoutStats.averagePayoutAmount || 0}`} tone="default" />
+            <MetricRow label="Premium Collected" value={`Rs ${stats.totalPremiumCollected || 0}`} tone="default" />
           </div>
           <div className="pt-4 mt-4 border-t">
             <Link to="/admin/claims" className="inline-flex items-center text-sm text-primary-600 hover:text-primary-500">
@@ -267,6 +292,48 @@ const AdminDashboard = () => {
                     <span key={zone.city} className="rounded-full bg-cyan-100 px-3 py-1 text-xs font-medium text-cyan-900">
                       {zone.city} • {zone.averageRiskScore}
                     </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-lg bg-slate-50 p-4">
+                <p className="text-sm font-semibold text-slate-900">Likely Next-Week Weather And Disruption Claims</p>
+                <div className="mt-4 rounded-md border border-slate-200 bg-white p-3">
+                  {likelyClaimChartData.length > 0 ? (
+                    <div className="h-52 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={likelyClaimChartData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                          <XAxis dataKey="shortName" tick={{ fontSize: 12 }} stroke="#64748b" />
+                          <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#64748b" />
+                          <Tooltip
+                            formatter={(value, name) => {
+                              if (name === 'predictedClaims') return [`${value} claims`, 'Predicted'];
+                              return [`${value}%`, 'Historical share'];
+                            }}
+                            labelFormatter={(_, payload) => payload?.[0]?.payload?.name || ''}
+                          />
+                          <Bar dataKey="predictedClaims" radius={[6, 6, 0, 0]}>
+                            {likelyClaimChartData.map((entry, index) => (
+                              <Cell key={`${entry.name}-${index}`} fill={chartPalette[index % chartPalette.length]} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">No prediction mix available yet.</p>
+                  )}
+                </div>
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {(predictions.likelyClaimsByType || []).map((item) => (
+                    <div key={item.type} className="rounded-md bg-white border border-slate-200 px-3 py-2">
+                      <p className="text-sm font-medium text-slate-900">{item.label}</p>
+                      <p className="text-xs text-slate-600 mt-1">
+                        Predicted next week: {item.predictedClaimsNextWeek} claims
+                      </p>
+                      <p className="text-xs text-slate-500">Historical share: {item.historicalSharePercent}%</p>
+                    </div>
                   ))}
                 </div>
               </div>

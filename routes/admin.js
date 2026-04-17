@@ -68,6 +68,22 @@ router.get('/dashboard/stats', authenticateAdmin, async (req, res) => {
   try {
     const { Worker, Policy, Claim } = require('../models');
 
+    const [payoutAggregate, premiumAggregate] = await Promise.all([
+      Claim.aggregate([
+        { $match: { 'financial.payoutStatus': 'completed' } },
+        { $group: { _id: null, total: { $sum: '$financial.payoutAmount' } } }
+      ]),
+      Worker.aggregate([
+        { $group: { _id: null, total: { $sum: '$premium.totalPaid' } } }
+      ])
+    ]);
+
+    const totalPayoutAmount = payoutAggregate[0]?.total || 0;
+    const totalPremiumCollected = premiumAggregate[0]?.total || 0;
+    const lossRatio = totalPremiumCollected > 0
+      ? Number(((totalPayoutAmount / totalPremiumCollected) * 100).toFixed(2))
+      : 0;
+
     const stats = {
       totalWorkers: await Worker.countDocuments(),
       activeWorkers: await Worker.countDocuments({ 'status.subscriptionStatus': 'active' }),
@@ -77,10 +93,9 @@ router.get('/dashboard/stats', authenticateAdmin, async (req, res) => {
       pendingClaims: await Claim.countDocuments({ 'status.current': 'initiated' }),
       approvedClaims: await Claim.countDocuments({ 'status.current': { $in: ['approved', 'paid'] } }),
       rejectedClaims: await Claim.countDocuments({ 'status.current': 'rejected' }),
-      totalPayoutAmount: await Claim.aggregate([
-        { $match: { 'financial.payoutStatus': 'completed' } },
-        { $group: { _id: null, total: { $sum: '$financial.payoutAmount' } } }
-      ]).then(result => result[0]?.total || 0)
+      totalPayoutAmount,
+      totalPremiumCollected,
+      lossRatio
     };
 
     res.json({
@@ -145,6 +160,68 @@ router.get('/predictions', authenticateAdmin, async (req, res) => {
         ? 100
         : 0;
 
+    const eightWeeksAgo = new Date(Date.now() - 56 * 24 * 60 * 60 * 1000);
+    const claimTypeVolume = await Claim.aggregate([
+      {
+        $match: {
+          'metadata.createdAt': { $gte: eightWeeksAgo },
+          'trigger.type': { $in: ['extreme_weather', 'high_pollution', 'traffic_congestion', 'civil_unrest'] }
+        }
+      },
+      {
+        $group: {
+          _id: '$trigger.type',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const typeWeights = {
+      extreme_weather: 1.15,
+      high_pollution: 1.05,
+      traffic_congestion: 1,
+      civil_unrest: 0.85
+    };
+    const typeLabels = {
+      extreme_weather: 'Weather Disruption',
+      high_pollution: 'Pollution Disruption',
+      traffic_congestion: 'Traffic Disruption',
+      civil_unrest: 'Civil Unrest'
+    };
+
+    const typeCounts = claimTypeVolume.reduce((acc, item) => {
+      acc[item._id] = item.count;
+      return acc;
+    }, {
+      extreme_weather: 0,
+      high_pollution: 0,
+      traffic_congestion: 0,
+      civil_unrest: 0
+    });
+
+    const totalTypeClaims = Object.values(typeCounts).reduce((sum, count) => sum + count, 0);
+    const weightedRaw = Object.keys(typeCounts).reduce((acc, type) => {
+      const share = totalTypeClaims > 0 ? typeCounts[type] / totalTypeClaims : 0;
+      acc[type] = share * (typeWeights[type] || 1);
+      return acc;
+    }, {});
+    const weightSum = Object.values(weightedRaw).reduce((sum, value) => sum + value, 0);
+
+    const likelyClaimsByType = Object.keys(typeCounts)
+      .map((type) => {
+        const normalizedShare = weightSum > 0 ? (weightedRaw[type] || 0) / weightSum : 0;
+        const predicted = Math.max(0, Math.round(predictedClaims * normalizedShare));
+        return {
+          type,
+          label: typeLabels[type] || type,
+          predictedClaimsNextWeek: predicted,
+          historicalSharePercent: totalTypeClaims > 0
+            ? Number(((typeCounts[type] / totalTypeClaims) * 100).toFixed(1))
+            : 0
+        };
+      })
+      .sort((a, b) => b.predictedClaimsNextWeek - a.predictedClaimsNextWeek);
+
     const zoneMap = new Map();
     workerPredictions.forEach((prediction) => {
       const zoneKey = prediction.city;
@@ -173,7 +250,8 @@ router.get('/predictions', authenticateAdmin, async (req, res) => {
         trend: `${trendPercent >= 0 ? '+' : ''}${trendPercent}%`,
         highRiskZones,
         averageRiskScore: Number(averageRiskScore.toFixed(2)),
-        workerPredictions: workerPredictions.slice(0, 10)
+        workerPredictions: workerPredictions.slice(0, 10),
+        likelyClaimsByType
       }
     });
   } catch (error) {

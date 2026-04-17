@@ -387,19 +387,19 @@ const Dashboard = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <InfoTile
-          label="Current Plan"
-          value={premiumStatus?.planType ? premiumStatus.planType.toUpperCase() : 'BASIC'}
+          label="Earnings Protected"
+          value={`Rs ${stats.totalPayout.toLocaleString()}`}
           tone="default"
         />
         <InfoTile
-          label="Weekly Premium"
-          value={`Rs ${premiumStatus?.weeklyAmount || 0}`}
-          tone="default"
-        />
-        <InfoTile
-          label="Coverage Status"
-          value={premiumStatus?.canClaimInsurance ? 'Active' : 'Payment Needed'}
+          label="Active Weekly Coverage"
+          value={premiumStatus?.canClaimInsurance ? 'Active' : 'Inactive'}
           tone={premiumStatus?.canClaimInsurance ? 'success' : 'danger'}
+        />
+        <InfoTile
+          label="Weekly Coverage Limit"
+          value={`Rs ${premiumStatus?.weeklyCoverageLimit || 0}`}
+          tone="default"
         />
       </div>
 
