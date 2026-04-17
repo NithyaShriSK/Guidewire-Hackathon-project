@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -275,6 +276,7 @@ def train_model(dataset_path: Path, model_path: Path) -> Dict[str, object]:
 
     best_search: GridSearchCV | None = None
     preferred_search: GridSearchCV | None = None
+    best_search_key: str | None = None
     leaderboard: List[Dict[str, object]] = []
 
     for model_name, estimator, grid in model_search_space(random_state=42):
@@ -291,9 +293,15 @@ def train_model(dataset_path: Path, model_path: Path) -> Dict[str, object]:
 
         if best_search is None or cv_accuracy > float(best_search.best_score_):
             best_search = search
+            best_search_key = model_name
+
+    selected_by = 'highest_cv_accuracy'
+    selected_model_key = best_search_key
 
     if preferred_search is not None:
         best_search = preferred_search
+        selected_by = 'preferred_model_override'
+        selected_model_key = preferred_model_key
 
     if best_search is None:
         raise RuntimeError('No model was trained successfully')
@@ -318,13 +326,23 @@ def train_model(dataset_path: Path, model_path: Path) -> Dict[str, object]:
         ranked = sorted(zip(FEATURE_COLUMNS, coefficients), key=lambda item: item[1], reverse=True)
         top_features = [name for name, _ in ranked]
 
+    sorted_leaderboard = sorted(leaderboard, key=lambda item: item['cv_accuracy'], reverse=True)
+    top_cv_model = sorted_leaderboard[0] if sorted_leaderboard else None
+
     payload = {
         'model': best_model,
         'feature_columns': FEATURE_COLUMNS,
         'metrics': metrics,
         'best_model_name': best_search.best_estimator_.named_steps['clf'].__class__.__name__,
         'best_params': best_search.best_params_,
-        'leaderboard': sorted(leaderboard, key=lambda item: item['cv_accuracy'], reverse=True),
+        'leaderboard': sorted_leaderboard,
+        'selection_policy': {
+            'preferred_model_key': preferred_model_key,
+            'selected_model_key': selected_model_key,
+            'selected_by': selected_by,
+            'top_cv_model_key': top_cv_model['model'] if top_cv_model else None,
+            'top_cv_accuracy': top_cv_model['cv_accuracy'] if top_cv_model else None,
+        },
         'top_features': top_features,
     }
 
@@ -336,7 +354,47 @@ def train_model(dataset_path: Path, model_path: Path) -> Dict[str, object]:
         'bestModel': payload['best_model_name'],
         'bestParams': payload['best_params'],
         'leaderboard': payload['leaderboard'],
+        'selectionPolicy': payload['selection_policy'],
     }
+
+
+def print_training_report(result: Dict[str, object], model_path: Path) -> None:
+    leaderboard = result.get('leaderboard', [])
+    selection_policy = result.get('selectionPolicy', {})
+    metrics = result.get('metrics', {})
+
+    print('=== Fraud Model Leaderboard (CV Accuracy) ===', file=sys.stderr)
+    for rank, item in enumerate(leaderboard, start=1):
+        print(
+            f"{rank:>2}. {item['model']:<20} cv_accuracy={item['cv_accuracy']:.4f}",
+            file=sys.stderr,
+        )
+
+    print('', file=sys.stderr)
+    print('=== Selection Logic ===', file=sys.stderr)
+    print(
+        f"Preferred model key: {selection_policy.get('preferred_model_key')}",
+        file=sys.stderr,
+    )
+    print(
+        f"Top CV model: {selection_policy.get('top_cv_model_key')} (accuracy={selection_policy.get('top_cv_accuracy')})",
+        file=sys.stderr,
+    )
+    print(
+        f"Selected model key: {selection_policy.get('selected_model_key')} via {selection_policy.get('selected_by')}",
+        file=sys.stderr,
+    )
+    print(
+        f"Final classifier: {result.get('bestModel')}",
+        file=sys.stderr,
+    )
+    print('', file=sys.stderr)
+    print('=== Test Metrics ===', file=sys.stderr)
+    print(
+        f"accuracy={metrics.get('accuracy')}  f1={metrics.get('f1')}  roc_auc={metrics.get('roc_auc')}",
+        file=sys.stderr,
+    )
+    print(f"Saved model: {model_path}", file=sys.stderr)
 
 
 def load_model(model_path: Path):
@@ -393,6 +451,7 @@ def main() -> int:
                 raise ValueError('--dataset is required for training')
 
             result = train_model(dataset_path, model_path)
+            print_training_report(result, model_path)
             print(json.dumps({'success': True, 'modelPath': str(model_path), **result}))
             return 0
 

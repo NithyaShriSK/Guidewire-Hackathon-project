@@ -1,21 +1,17 @@
-# FixMyPay Docker Run Guide
+# GigShield Docker Setup For A New System
 
-This guide is only for running the project with Docker.
+This guide is the recommended way to run the project on a fresh machine with minimum setup issues.
 
-No local Node.js setup is required for the app itself if you use Docker.
+No local Node.js, MongoDB, Redis, or Python installation is required when using Docker.
 
-## What They Need To Install First
+## 1. Prerequisites
 
-Before running the project, install:
+Install the following first:
 
 - Git
 - Docker Desktop
 
-Docker Desktop already includes Docker Compose in most setups.
-
-## Check Installation
-
-Open terminal or PowerShell and run:
+Verify installation:
 
 ```bash
 git --version
@@ -23,186 +19,161 @@ docker --version
 docker compose version
 ```
 
-If all 3 commands return versions, the machine is ready.
+If all commands return versions, continue.
 
-## 1. Clone The Repository
+## 2. Clone The Project
 
 ```bash
 git clone <your-repository-url>
 cd "Guidewire hackathon"
 ```
 
-## 2. Create The Environment File
+## 3. Create The Environment File
 
-This project includes a ready-to-use `.env.example` file.
+Copy .env.example to .env.
 
-Create `.env` from it.
-
-### Windows PowerShell
+Windows PowerShell:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-### macOS / Linux
+macOS/Linux:
 
 ```bash
 cp .env.example .env
 ```
 
-## 3. `.env` Is Ready After Copy
+Important:
 
-Notes:
-
-- After copying, `.env` is ready to use.
-- `UPI_FAKE_MODE=true` is recommended for demo use.
-- The Docker setup already uses its own MongoDB container, so they do not need to install MongoDB separately.
-
-## Registration Criteria
-
-### Worker Registration
-
-Required fields and rules:
-
-- First name: 1 to 50 characters.
-- Last name: 1 to 50 characters.
-- Email: valid email address.
-- Phone number: exactly 10 digits and must start with 6, 7, 8, or 9.
-- Date of birth: valid ISO date.
-- Aadhaar number: exactly 12 digits.
-- Address street: 5 to 200 characters.
-- City: 2 to 50 characters.
-- State: 2 to 50 characters.
-- Pincode: exactly 6 digits.
-- Latitude: between -90 and 90.
-- Longitude: between -180 and 180.
-- At least one work platform must be added.
-- Platform worker ID: required.
-- Average daily earnings: between 100 and 10,000.
-- Average weekly hours: between 1 and 80.
-- At least one preferred working zone must be added.
-- Working hours must be in HH:MM format.
-- UPI ID: valid UPI format.
-- Bank account number: 9 to 18 digits.
-- IFSC code: valid Indian IFSC format.
-- Account holder name: 2 to 100 characters.
-- Weekly income range minimum: 500 to 50,000.
-- Weekly income range maximum: 500 to 50,000 and must be greater than or equal to the minimum.
-- Password: at least 8 characters.
-
-Note:
-- If you want a 6-digit worker ID format for demo purposes, that is a recommended convention only.
-- The current code only checks that the platform worker ID is not empty; it does not enforce 6 digits yet.
-
-### Admin Registration
-
-Required fields and rules:
-
-- First name: 2 to 50 characters.
-- Last name: 2 to 50 characters.
-- Email: valid email address.
-- Phone number: exactly 10 digits and must start with 6, 7, 8, or 9.
-- Employee ID: 3 to 20 characters.
-- Role type: must be one of `super_admin`, `claims_manager`, `risk_analyst`, `support_agent`, or `auditor`.
-- Department: must be one of `operations`, `risk`, `finance`, `technology`, or `compliance`.
-- Password: at least 8 characters and must include uppercase, lowercase, number, and special character.
+- Keep UPI_FAKE_MODE=true for demo payouts.
+- For full live weather, pollution, and traffic features, use valid API keys in .env.
 
 ## 4. Start Docker Desktop
 
-Make sure Docker Desktop is open and fully running before starting the project.
+Make sure Docker Desktop is fully started before running compose commands.
 
-## 5. Run The Project With Docker
+## 5. Start The Stack (Recommended No-Error Command)
 
-Use the development Docker compose file because it starts everything needed:
-
-- MongoDB
-- Redis
-- Backend
-- Frontend
-
-Run:
-npm install
-
-then:
+Start only core services first (recommended for new systems):
 
 ```bash
-docker compose -f docker-compose.dev.yml up --build
+docker compose up -d --build mongodb redis backend frontend
 ```
 
-The first run may take a few minutes because Docker needs to build the images.
+Why this command:
 
-## 6. Open The App
+- Starts everything needed for app features.
+- Avoids optional reverse-proxy startup issues on machines without SSL setup.
 
-After the containers start, open:
-
-- Frontend: `http://localhost:3001`
-- Backend API: `http://localhost:5002`
-- Health check: `http://localhost:5002/api/health`
-
-## 7. How To Stop The Project
-
-In the same terminal, press:
+Optional: start full stack including nginx
 
 ```bash
-Ctrl + C
+docker compose up -d --build
 ```
 
-Then run:
+## 6. Verify Containers Are Healthy
 
 ```bash
-docker compose -f docker-compose.dev.yml down
+docker compose ps
 ```
 
-## 8. If They Want A Fresh Start
+Expected running services:
 
-To stop and remove containers plus volumes:
+- gigshield-mongodb
+- gigshield-redis
+- gigshield-backend
+- gigshield-frontend
+
+## 7. Open The Application
+
+- Frontend: http://localhost:3001
+- Backend health endpoint: http://localhost:5000/api/health
+
+## 8. First-Time Feature Validation Checklist
+
+Use this quick checklist to confirm major features are running:
+
+1. Register a Worker account.
+2. Register an Admin account.
+3. Worker pays weekly premium (demo mode works with UPI_FAKE_MODE=true).
+4. Worker dashboard shows active weekly coverage and earnings protected metrics.
+5. Admin dashboard shows:
+	- loss ratio
+	- predicted next-week claims
+	- likely next-week weather/disruption claim mix chart
+6. Admin fraud simulation runs and returns model score, risk level, and explanation.
+
+## 9. Useful Commands
+
+View service logs:
 
 ```bash
-docker compose -f docker-compose.dev.yml down -v
+docker compose logs -f backend
+docker compose logs -f frontend
 ```
 
-Then start again:
+Restart specific service:
 
 ```bash
-docker compose -f docker-compose.dev.yml up --build
+docker compose restart backend
+docker compose restart frontend
 ```
 
-## 9. Common Problems
-
-### Docker is not recognized
-
-Install Docker Desktop and restart the machine if needed.
-
-### `docker compose` is not recognized
-
-Update Docker Desktop to a newer version.
-
-### Port already in use
-
-This project uses:
-
-- `3001` for frontend
-- `5002` for backend
-- `27018` for MongoDB
-- `6379` for Redis
-
-Close anything else using those ports, then run Docker again.
-
-### App does not open
-
-Check container logs in the terminal.
-
-You can also run:
+Stop all services:
 
 ```bash
-docker compose -f docker-compose.dev.yml ps
+docker compose down
 ```
 
-## 10. Quick Summary
+Clean reset (containers + volumes):
 
-1. Install Git and Docker Desktop
-2. Clone the repo
-3. Copy `.env.example` to `.env`
-4. Start Docker Desktop
-5. Run `docker compose -f docker-compose.dev.yml up --build`
-6. Open `http://localhost:3001`
+```bash
+docker compose down -v
+docker compose up -d --build mongodb redis backend frontend
+```
+
+## 10. Ports Used
+
+- 3001: frontend
+- 5000: backend API
+- 27017: MongoDB
+- 6379: Redis
+- 80 and 443: nginx (only when full stack is started)
+
+## 11. Troubleshooting (Most Common)
+
+Docker command not found:
+
+- Restart Docker Desktop.
+- Reopen terminal and run docker --version again.
+
+Port already in use:
+
+- Stop conflicting apps on 3001, 5000, 27017, 6379.
+- Then restart compose.
+
+Frontend opens but API calls fail:
+
+- Check backend logs: docker compose logs -f backend
+- Verify health endpoint: http://localhost:5000/api/health
+
+Monitoring and environmental triggers not working:
+
+- Ensure WEATHER_API_KEY, POLLUTION_API_KEY, TRAFFIC_API_KEY are valid in .env.
+- Rebuild backend after updating env:
+
+```bash
+docker compose up -d --build backend
+```
+
+Fraud model command runs locally but fails in host Python:
+
+- Prefer running app features via Docker backend.
+- If host Python is used, install compatible sklearn/pandas/joblib versions.
+
+## 12. One-Line Quick Start
+
+```bash
+git clone <your-repository-url> && cd "Guidewire hackathon" && cp .env.example .env && docker compose up -d --build mongodb redis backend frontend
+```
