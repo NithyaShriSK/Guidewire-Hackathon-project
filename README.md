@@ -1,5 +1,7 @@
 # FixMyPay Docker Setup For A New System
 
+**Project Report: https://drive.google.com/file/d/1V4-zO2uT34TTiP9J9hlpHumZLM20TLBD/view?usp=sharing**
+
 This guide is the recommended way to run the project on a fresh machine with minimum setup issues.
 
 No local Node.js, MongoDB, Redis, or Python installation is required when using Docker.
