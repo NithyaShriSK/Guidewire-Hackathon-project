@@ -1,4 +1,4 @@
-# GigShield Docker Setup For A New System
+# FixMyPay Docker Setup For A New System
 
 This guide is the recommended way to run the project on a fresh machine with minimum setup issues.
 
@@ -80,10 +80,10 @@ docker compose ps
 
 Expected running services:
 
-- gigshield-mongodb
-- gigshield-redis
-- gigshield-backend
-- gigshield-frontend
+- fixmypay-mongodb
+- fixmypay-redis
+- fixmypay-backend
+- fixmypay-frontend
 
 ## 7. Open The Application
 
