@@ -21,9 +21,8 @@ const createPolicy = async (req, res) => {
     const riskAssessment = await riskAssessmentService.calculateBaseRiskScore(worker);
     
     // Calculate dynamic premium
-    const premiumCalculation = riskAssessmentService.calculateDynamicPremium(
+    const premiumCalculation = await riskAssessmentService.calculatePremiumWithForecast(
       premium.baseAmount || 20,
-      riskAssessment.riskScore,
       worker
     );
 

@@ -154,6 +154,36 @@ const WeeklyPremium = () => {
               </div>
             ) : null}
 
+            {premiumStatus?.riskPrediction ? (
+              <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm uppercase tracking-wide text-slate-500">ML risk forecast</p>
+                    <p className="mt-1 text-lg font-semibold text-slate-950">
+                      Risk score {premiumStatus.riskPrediction.riskScore} • {premiumStatus.riskPrediction.riskLevel}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-700">
+                      Predicted claims next week: {premiumStatus.riskPrediction.predictedClaimsNextWeek}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-700">
+                      Confidence level: {Math.round((premiumStatus.riskPrediction.confidence || 0) * 100)}%
+                    </p>
+                  </div>
+                  <div className="rounded-2xl bg-white px-4 py-3 text-sm text-slate-900 shadow-sm">
+                    Premium forecast: {premiumStatus.forecastMultiplier || 1}x
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="rounded-2xl bg-white px-4 py-3 text-sm text-slate-700 shadow-sm">
+                    {premiumStatus.premiumRecommendation || 'Maintain current premium'}
+                  </div>
+                  <div className={`rounded-2xl px-4 py-3 text-sm font-semibold shadow-sm ${premiumStatus.riskPrediction.riskLevel === 'HIGH' ? 'bg-red-50 text-red-700' : premiumStatus.riskPrediction.riskLevel === 'MEDIUM' ? 'bg-yellow-50 text-yellow-800' : 'bg-green-50 text-green-700'}`}>
+                    AI reason: {premiumStatus.riskPrediction.reason}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
             {!premiumStatus?.currentWeekPaid ? (
               <button onClick={() => setShowPaymentForm(true)} className="btn-primary">
                 <CreditCardIcon className="h-5 w-5 mr-2" />

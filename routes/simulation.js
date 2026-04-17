@@ -3,6 +3,7 @@ const router = express.Router();
 const { authenticateWorker, authenticateAdmin } = require('../middleware/auth');
 const monitoringService = require('../services/monitoringService');
 const claimService = require('../services/claimService');
+const fraudDetectionService = require('../services/fraudDetectionService');
 const { Worker, Policy, MonitoringData, ActivityLog, Claim } = require('../models');
 
 const DEMO_COVERED_RISKS = [
@@ -501,6 +502,42 @@ router.post('/claim', authenticateAdmin, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to simulate claim'
+    });
+  }
+});
+
+// Fraud simulation using ML-style fraud scoring
+router.post('/fraud', authenticateAdmin, async (req, res) => {
+  try {
+    const { scenario, workerId } = req.body;
+
+    if (!scenario) {
+      return res.status(400).json({
+        success: false,
+        message: 'Scenario is required'
+      });
+    }
+
+    const supportedScenarios = ['gps_spoofing', 'fake_weather_claim', 'frequent_claim_abuse', 'normal_case'];
+    if (!supportedScenarios.includes(scenario)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid fraud simulation scenario'
+      });
+    }
+
+    const result = await fraudDetectionService.simulateFraudScenario({ scenario, workerId });
+
+    res.json({
+      success: true,
+      message: 'Fraud simulation completed successfully',
+      data: result
+    });
+  } catch (error) {
+    console.error('Fraud simulation error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to run fraud simulation'
     });
   }
 });

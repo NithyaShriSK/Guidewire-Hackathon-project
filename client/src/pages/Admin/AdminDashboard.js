@@ -6,6 +6,7 @@ import {
   EyeIcon,
   PlayIcon,
   ShieldCheckIcon,
+  ShieldExclamationIcon,
   UsersIcon,
 } from '@heroicons/react/24/outline';
 import { adminAPI, claimAPI, simulationAPI } from '../../services/api';
@@ -42,6 +43,7 @@ const AdminDashboard = () => {
   const [selectedWorker, setSelectedWorker] = useState(null);
   const [latestSimulation, setLatestSimulation] = useState(null);
   const [simulationPair, setSimulationPair] = useState({ noPayout: null, payout: null });
+  const [predictions, setPredictions] = useState(null);
 
   useEffect(() => {
     fetchDashboardData();
@@ -51,17 +53,19 @@ const AdminDashboard = () => {
     try {
       setLoading(true);
 
-      const [dashboardResponse, fraudResponse, payoutResponse, workersResponse] = await Promise.all([
+      const [dashboardResponse, fraudResponse, payoutResponse, workersResponse, predictionResponse] = await Promise.all([
         adminAPI.getDashboardStats(),
         claimAPI.getFraudStatistics({ timeRange: '30d' }),
         claimAPI.getPayoutStatistics({ timeRange: '30d' }),
         adminAPI.getAllWorkers({ limit: 8 }),
+        adminAPI.getPredictions(),
       ]);
 
       setStats(dashboardResponse.data.data);
       setFraudStats(fraudResponse.data.data);
       setPayoutStats(payoutResponse.data.data);
       setWorkers(workersResponse.data.data.workers || []);
+      setPredictions(predictionResponse.data.data || null);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
       toast.error('Failed to load dashboard data');
@@ -235,6 +239,45 @@ const AdminDashboard = () => {
               ))}
             </div>
           ) : null}
+        </div>
+
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-medium text-gray-900">AI Weekly Prediction</h3>
+              <p className="text-sm text-gray-600 mt-1">
+                Next-week claims, geographic risk, and premium impact from the ML forecast layer.
+              </p>
+            </div>
+            <ShieldExclamationIcon className="h-8 w-8 text-cyan-600" />
+          </div>
+
+          {predictions ? (
+            <div className="mt-4 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <MetricRow label="Predicted Claims" value={predictions.predictedClaims} tone="default" />
+                <MetricRow label="Trend" value={predictions.trend} tone={predictions.trend?.startsWith('+') ? 'warning' : 'success'} />
+                <MetricRow label="Avg Risk Score" value={predictions.averageRiskScore} tone={predictions.averageRiskScore >= 0.7 ? 'danger' : predictions.averageRiskScore >= 0.4 ? 'warning' : 'success'} />
+              </div>
+
+              <div className="rounded-lg bg-slate-50 p-4">
+                <p className="text-sm font-semibold text-slate-900">High Risk Zones</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {(predictions.highRiskZones || []).map((zone) => (
+                    <span key={zone.city} className="rounded-full bg-cyan-100 px-3 py-1 text-xs font-medium text-cyan-900">
+                      {zone.city} • {zone.averageRiskScore}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <Link to="/admin/fraud-simulation" className="inline-flex items-center text-sm text-primary-600 hover:text-primary-500">
+                Open fraud simulation →
+              </Link>
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-gray-500">Prediction data is loading or unavailable.</p>
+          )}
         </div>
       </div>
 

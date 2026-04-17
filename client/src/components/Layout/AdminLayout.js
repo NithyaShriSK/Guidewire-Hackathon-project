@@ -6,6 +6,7 @@ import {
   ExclamationTriangleIcon,
   PlayIcon,
   ShieldCheckIcon,
+  ShieldExclamationIcon,
   ArrowRightOnRectangleIcon,
   Bars3Icon,
   XMarkIcon,
@@ -28,6 +29,7 @@ const AdminLayout = () => {
     { name: 'Policy & Terms', href: '/admin/policies', icon: ShieldCheckIcon },
     { name: 'Claims', href: '/admin/claims', icon: ExclamationTriangleIcon },
     { name: 'Simulation', href: '/admin/simulation', icon: PlayIcon },
+    { name: 'Fraud Simulation', href: '/admin/fraud-simulation', icon: ShieldExclamationIcon },
   ];
 
   const handleLogout = () => {

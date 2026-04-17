@@ -58,6 +58,55 @@ Notes:
 - `UPI_FAKE_MODE=true` is recommended for demo use.
 - The Docker setup already uses its own MongoDB container, so they do not need to install MongoDB separately.
 
+## Registration Criteria
+
+### Worker Registration
+
+Required fields and rules:
+
+- First name: 1 to 50 characters.
+- Last name: 1 to 50 characters.
+- Email: valid email address.
+- Phone number: exactly 10 digits and must start with 6, 7, 8, or 9.
+- Date of birth: valid ISO date.
+- Aadhaar number: exactly 12 digits.
+- Address street: 5 to 200 characters.
+- City: 2 to 50 characters.
+- State: 2 to 50 characters.
+- Pincode: exactly 6 digits.
+- Latitude: between -90 and 90.
+- Longitude: between -180 and 180.
+- At least one work platform must be added.
+- Platform worker ID: required.
+- Average daily earnings: between 100 and 10,000.
+- Average weekly hours: between 1 and 80.
+- At least one preferred working zone must be added.
+- Working hours must be in HH:MM format.
+- UPI ID: valid UPI format.
+- Bank account number: 9 to 18 digits.
+- IFSC code: valid Indian IFSC format.
+- Account holder name: 2 to 100 characters.
+- Weekly income range minimum: 500 to 50,000.
+- Weekly income range maximum: 500 to 50,000 and must be greater than or equal to the minimum.
+- Password: at least 8 characters.
+
+Note:
+- If you want a 6-digit worker ID format for demo purposes, that is a recommended convention only.
+- The current code only checks that the platform worker ID is not empty; it does not enforce 6 digits yet.
+
+### Admin Registration
+
+Required fields and rules:
+
+- First name: 2 to 50 characters.
+- Last name: 2 to 50 characters.
+- Email: valid email address.
+- Phone number: exactly 10 digits and must start with 6, 7, 8, or 9.
+- Employee ID: 3 to 20 characters.
+- Role type: must be one of `super_admin`, `claims_manager`, `risk_analyst`, `support_agent`, or `auditor`.
+- Department: must be one of `operations`, `risk`, `finance`, `technology`, or `compliance`.
+- Password: at least 8 characters and must include uppercase, lowercase, number, and special character.
+
 ## 4. Start Docker Desktop
 
 Make sure Docker Desktop is open and fully running before starting the project.

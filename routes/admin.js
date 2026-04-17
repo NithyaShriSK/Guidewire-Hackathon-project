@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { Admin } = require('../models');
 const { authenticateAdmin, authorize } = require('../middleware/auth');
+const riskAssessmentService = require('../services/riskAssessmentService');
 
 // Get admin profile
 router.get('/profile', authenticateAdmin, async (req, res) => {
@@ -91,6 +92,95 @@ router.get('/dashboard/stats', authenticateAdmin, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch dashboard statistics'
+    });
+  }
+});
+
+// ML-powered weekly predictions and premium impact summary
+router.get('/predictions', authenticateAdmin, async (req, res) => {
+  try {
+    const { Worker, Claim } = require('../models');
+
+    const activeWorkers = await Worker.find({ 'status.accountStatus': 'active' })
+      .select('personalInfo locationTracking workInfo financialInfo riskProfile premium status')
+      .limit(50)
+      .lean();
+
+    const workerPredictions = await Promise.all(
+      activeWorkers.map(async (worker) => {
+        const prediction = await riskAssessmentService.getWorkerRiskPrediction(worker);
+        return {
+          workerId: worker._id,
+          workerName: `${worker.personalInfo?.firstName || ''} ${worker.personalInfo?.lastName || ''}`.trim(),
+          city: worker.personalInfo?.address?.city || worker.locationTracking?.workingRegion || 'Unknown',
+          riskScore: prediction.riskScore,
+          riskLevel: prediction.riskLevel,
+          predictedClaimsNextWeek: prediction.predictedClaimsNextWeek,
+          confidence: prediction.confidence,
+          premiumAdjustmentPercent: prediction.premiumAdjustmentPercent,
+          premiumRecommendation: prediction.premiumAdjustmentPercent > 0 ? 'Increase' : prediction.premiumAdjustmentPercent < 0 ? 'Decrease' : 'Hold',
+          modelSource: prediction.modelSource
+        };
+      })
+    );
+
+    const predictedClaims = workerPredictions.reduce((sum, item) => sum + item.predictedClaimsNextWeek, 0);
+    const averageRiskScore = workerPredictions.length
+      ? workerPredictions.reduce((sum, item) => sum + item.riskScore, 0) / workerPredictions.length
+      : 0;
+
+    const currentWeekStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const previousWeekStart = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+
+    const currentWeekClaims = await Claim.countDocuments({
+      'metadata.createdAt': { $gte: currentWeekStart }
+    });
+    const previousWeekClaims = await Claim.countDocuments({
+      'metadata.createdAt': { $gte: previousWeekStart, $lt: currentWeekStart }
+    });
+
+    const trendPercent = previousWeekClaims > 0
+      ? Math.round(((currentWeekClaims - previousWeekClaims) / previousWeekClaims) * 100)
+      : currentWeekClaims > 0
+        ? 100
+        : 0;
+
+    const zoneMap = new Map();
+    workerPredictions.forEach((prediction) => {
+      const zoneKey = prediction.city;
+      if (!zoneMap.has(zoneKey)) {
+        zoneMap.set(zoneKey, { city: zoneKey, score: 0, count: 0 });
+      }
+      const zone = zoneMap.get(zoneKey);
+      zone.score += prediction.riskScore;
+      zone.count += 1;
+    });
+
+    const highRiskZones = Array.from(zoneMap.values())
+      .map((zone) => ({
+        city: zone.city,
+        averageRiskScore: Number((zone.score / zone.count).toFixed(2)),
+        predictedClaims: Math.max(1, Math.round((zone.score / zone.count) * zone.count * 2)),
+        premiumAdjustmentPercent: Math.round((zone.score / zone.count) * 25)
+      }))
+      .sort((a, b) => b.averageRiskScore - a.averageRiskScore)
+      .slice(0, 5);
+
+    res.json({
+      success: true,
+      data: {
+        predictedClaims,
+        trend: `${trendPercent >= 0 ? '+' : ''}${trendPercent}%`,
+        highRiskZones,
+        averageRiskScore: Number(averageRiskScore.toFixed(2)),
+        workerPredictions: workerPredictions.slice(0, 10)
+      }
+    });
+  } catch (error) {
+    console.error('Get admin predictions error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch ML predictions'
     });
   }
 });

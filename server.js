@@ -8,6 +8,18 @@ require('dotenv').config();
 
 const app = express();
 
+const defaultAllowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:3001',
+  'https://yourdomain.com'
+];
+
+const configuredOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim()).filter(Boolean)
+  : defaultAllowedOrigins;
+
 // Configure trust proxy so rate limiting can correctly read client IP behind Docker/reverse proxies.
 const trustProxyValue = process.env.TRUST_PROXY;
 if (trustProxyValue !== undefined) {
@@ -26,9 +38,18 @@ if (trustProxyValue !== undefined) {
 // Security middleware
 app.use(helmet());
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production'
-    ? 'https://yourdomain.com'
-    : ['http://localhost:3000', 'http://localhost:3001'],
+  origin: (origin, callback) => {
+    // Allow non-browser requests without an Origin header.
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    if (configuredOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`Not allowed by CORS: ${origin}`));
+  },
   credentials: true
 }));
 

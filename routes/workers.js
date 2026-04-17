@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { Worker, Policy, ActivityLog } = require('../models');
 const { authenticateWorker, authenticateAdmin, authorize } = require('../middleware/auth');
+const riskAssessmentService = require('../services/riskAssessmentService');
 
 const PREMIUM_TIERS = {
   basic: {
@@ -463,6 +464,11 @@ router.get('/premium/status', authenticateWorker, async (req, res) => {
     const canClaimInsurance = Boolean(worker.premium.currentWeekPaid) && worker.status.subscriptionStatus === 'active' && !isOverdue;
     const { availableTiers, pricing } = buildDynamicPremiumTiers(worker);
     const currentTier = availableTiers[worker.premium.planType || 'basic'] || availableTiers.basic;
+    const riskPrediction = await riskAssessmentService.getWorkerRiskPrediction(worker);
+    const premiumForecast = await riskAssessmentService.calculatePremiumWithForecast(
+      worker.premium.weeklyAmount || currentTier.weeklyAmount,
+      worker
+    );
     
     res.json({
       success: true,
@@ -481,7 +487,11 @@ router.get('/premium/status', authenticateWorker, async (req, res) => {
         subscriptionStatus: worker.status.subscriptionStatus,
         canClaimInsurance,
         availableTiers,
-        dynamicPricing: pricing
+        dynamicPricing: pricing,
+        riskPrediction,
+        premiumRecommendation: premiumForecast.premiumRecommendation,
+        recommendedWeeklyAmount: premiumForecast.finalPremium,
+        forecastMultiplier: premiumForecast.forecastMultiplier
       }
     });
   } catch (error) {

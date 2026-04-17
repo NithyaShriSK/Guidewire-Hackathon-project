@@ -1,7 +1,13 @@
-const { MonitoringData } = require('../models');
+const fs = require('fs');
+const path = require('path');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const { MonitoringData, Worker } = require('../models');
 const { Matrix, solve } = require('ml-matrix');
 const { LinearRegression } = require('ml-regression');
 const ss = require('simple-statistics');
+
+const execFileAsync = promisify(execFile);
 
 class RiskAssessmentService {
   constructor() {
@@ -34,6 +40,213 @@ class RiskAssessmentService {
         claimSeverity: { weight: 0.3 },
         fraudIndicators: { weight: 0.3 }
       }
+    };
+
+    this.mlPaths = {
+      riskScript: path.join(__dirname, '..', 'ml', 'risk_model.py'),
+      riskModel: path.join(__dirname, '..', 'ml', 'risk_model.joblib')
+    };
+  }
+
+  getWorkerCoordinates(worker) {
+    const currentLocation = worker?.locationTracking?.currentLocation;
+    const addressCoordinates = worker?.personalInfo?.address?.coordinates;
+
+    if (typeof currentLocation?.latitude === 'number' && typeof currentLocation?.longitude === 'number') {
+      return {
+        latitude: currentLocation.latitude,
+        longitude: currentLocation.longitude
+      };
+    }
+
+    if (typeof addressCoordinates?.latitude === 'number' && typeof addressCoordinates?.longitude === 'number') {
+      return {
+        latitude: addressCoordinates.latitude,
+        longitude: addressCoordinates.longitude
+      };
+    }
+
+    return null;
+  }
+
+  async getEnvironmentalSnapshot(worker) {
+    const coordinates = this.getWorkerCoordinates(worker);
+    const city = worker?.locationTracking?.workingRegion || worker?.personalInfo?.address?.city || 'Unknown';
+
+    if (!coordinates) {
+      return {
+        city,
+        weather: { rainfall: 0, windSpeed: 0, temperature: 28, humidity: 55 },
+        pollution: { aqi: 60, pm25: 20, pm10: 40, no2: 15 },
+        traffic: { congestionLevel: 3, averageSpeed: 25 }
+      };
+    }
+
+    const [weatherData, pollutionData, trafficData] = await Promise.all([
+      MonitoringData.findLatestForLocation('weather', coordinates, 24 * 60),
+      MonitoringData.findLatestForLocation('pollution', coordinates, 24 * 60),
+      MonitoringData.findLatestForLocation('traffic', coordinates, 60)
+    ]);
+
+    return {
+      city,
+      weather: weatherData?.[0]?.data?.weather || { rainfall: 0, windSpeed: 0, temperature: 28, humidity: 55 },
+      pollution: pollutionData?.[0]?.data?.pollution || { aqi: 60, pm25: 20, pm10: 40, no2: 15 },
+      traffic: trafficData?.[0]?.data?.traffic || { congestionLevel: 3, averageSpeed: 25 },
+      coordinates
+    };
+  }
+
+  buildRiskFeatureVector(worker, snapshot) {
+    const city = (snapshot?.city || worker?.personalInfo?.address?.city || worker?.locationTracking?.workingRegion || '').toLowerCase();
+    const cityRisk = {
+      mumbai: 0.18,
+      chennai: 0.16,
+      delhi: 0.24,
+      bangalore: 0.17,
+      bengaluru: 0.17,
+      hyderabad: 0.14,
+      kolkata: 0.15,
+      pune: 0.13
+    }[city] || 0.1;
+
+    const claims = worker?.riskProfile?.historicalClaims || {};
+    const workHours = worker?.workInfo?.typicalWorkingHours || { start: '08:00', end: '20:00' };
+    const startHour = parseInt(String(workHours.start).split(':')[0], 10) || 8;
+    const endHour = parseInt(String(workHours.end).split(':')[0], 10) || 20;
+    const workWindow = Math.max(1, endHour - startHour);
+
+    return {
+      rainfall: Number(snapshot?.weather?.rainfall || 0),
+      windSpeed: Number(snapshot?.weather?.windSpeed || 0),
+      temperature: Number(snapshot?.weather?.temperature || 28),
+      humidity: Number(snapshot?.weather?.humidity || 55),
+      aqi: Number(snapshot?.pollution?.aqi || 60),
+      pm25: Number(snapshot?.pollution?.pm25 || 20),
+      pm10: Number(snapshot?.pollution?.pm10 || 40),
+      no2: Number(snapshot?.pollution?.no2 || 15),
+      congestionLevel: Number(snapshot?.traffic?.congestionLevel || 3),
+      averageSpeed: Number(snapshot?.traffic?.averageSpeed || 25),
+      cityRisk,
+      claimFrequency: Number(claims.totalClaims || 0),
+      approvalRatio: claims.totalClaims ? Number(((claims.approvedClaims || 0) / claims.totalClaims).toFixed(2)) : 0.5,
+      workWindowHours: workWindow,
+      incomeVolatility: worker?.financialInfo?.weeklyIncomeRange?.min
+        ? Number((((worker.financialInfo.weeklyIncomeRange.max || 0) - worker.financialInfo.weeklyIncomeRange.min) / worker.financialInfo.weeklyIncomeRange.min).toFixed(2))
+        : 0.2
+    };
+  }
+
+  async predictRiskWithPython(featureVector) {
+    if (!fs.existsSync(this.mlPaths.riskScript)) {
+      throw new Error('Risk ML script not found');
+    }
+
+    const pythonBinary = process.env.PYTHON_BIN || (process.platform === 'win32' ? 'python' : 'python3');
+    const { stdout } = await execFileAsync(
+      pythonBinary,
+      [
+        this.mlPaths.riskScript,
+        '--predict',
+        '--input',
+        JSON.stringify(featureVector),
+        '--model',
+        this.mlPaths.riskModel
+      ],
+      {
+        maxBuffer: 1024 * 1024 * 10,
+        env: {
+          ...process.env
+        }
+      }
+    );
+
+    return JSON.parse(stdout.trim());
+  }
+
+  async getWorkerRiskPrediction(worker) {
+    try {
+      const snapshot = await this.getEnvironmentalSnapshot(worker);
+      const featureVector = this.buildRiskFeatureVector(worker, snapshot);
+
+      let modelOutput;
+      let source = 'heuristic-fallback';
+
+      try {
+        modelOutput = await this.predictRiskWithPython(featureVector);
+        source = 'python-ml';
+      } catch (error) {
+        const weatherRisk = Math.min(1, (featureVector.rainfall / 40) + (featureVector.windSpeed / 120) + (featureVector.temperature > 38 ? 0.15 : 0));
+        const pollutionRisk = Math.min(1, (featureVector.aqi / 500) + (featureVector.pm25 / 300));
+        const trafficRisk = Math.min(1, (featureVector.congestionLevel / 10) + (featureVector.averageSpeed < 10 ? 0.2 : 0));
+        const historyRisk = Math.min(1, (featureVector.claimFrequency / 12) + (featureVector.approvalRatio < 0.4 ? 0.15 : 0));
+
+        const fallbackRiskScore = Math.min(1, (weatherRisk * 0.3) + (pollutionRisk * 0.25) + (trafficRisk * 0.25) + (historyRisk * 0.2));
+
+        modelOutput = {
+          riskScore: Number(fallbackRiskScore.toFixed(2)),
+          riskLevel: this.getRiskLevel(fallbackRiskScore).toUpperCase(),
+          predictedClaimsNextWeek: Math.max(0, Math.round(fallbackRiskScore * 10 + featureVector.claimFrequency * 0.25)),
+          confidence: Number((0.7 + Math.abs(fallbackRiskScore - 0.5) * 0.4).toFixed(2)),
+          premiumAdjustmentPercent: Math.max(-10, Math.min(35, Math.round(fallbackRiskScore * 35) - 8)),
+          reason: 'Environmental and historical risk heuristic',
+          modelSource: source
+        };
+      }
+
+      const riskScore = Number(modelOutput.riskScore ?? modelOutput.risk_score ?? modelOutput.prediction ?? 0.4);
+      const riskLevel = String(modelOutput.riskLevel ?? modelOutput.risk_level ?? this.getRiskLevel(riskScore)).toUpperCase();
+      const predictedClaimsNextWeek = Number(modelOutput.predictedClaimsNextWeek ?? modelOutput.predicted_claims_next_week ?? Math.max(0, Math.round(riskScore * 10)));
+      const confidence = Number(modelOutput.confidence ?? 0.75);
+      const premiumAdjustmentPercent = Number(modelOutput.premiumAdjustmentPercent ?? modelOutput.premium_adjustment_percent ?? Math.max(-10, Math.min(35, Math.round(riskScore * 30) - 8)));
+
+      return {
+        riskScore: Number(riskScore.toFixed(2)),
+        riskLevel,
+        predictedClaimsNextWeek,
+        confidence: Number(confidence.toFixed(2)),
+        premiumAdjustmentPercent,
+        reason: modelOutput.reason || 'ML-based weekly claim risk prediction',
+        preventiveAlert: riskScore >= 0.7 ? 'Send proactive disruption alert and review premium' : null,
+        featureVector,
+        snapshot,
+        modelSource: modelOutput.modelSource || source
+      };
+    } catch (error) {
+      console.error('Error predicting worker risk:', error);
+      return {
+        riskScore: 0.4,
+        riskLevel: 'MEDIUM',
+        predictedClaimsNextWeek: 2,
+        confidence: 0.65,
+        premiumAdjustmentPercent: 5,
+        reason: 'Fallback weekly risk estimate',
+        preventiveAlert: null,
+        modelSource: 'fallback'
+      };
+    }
+  }
+
+  async calculatePremiumWithForecast(basePremium, worker) {
+    const baseRiskAssessment = await this.calculateBaseRiskScore(worker);
+    const premiumBase = this.calculateDynamicPremium(basePremium, baseRiskAssessment.riskScore, worker);
+    const weeklyPrediction = await this.getWorkerRiskPrediction(worker);
+    const forecastMultiplier = 1 + (weeklyPrediction.premiumAdjustmentPercent / 100);
+    const finalPremium = Math.max(5, Math.round(premiumBase.finalPremium * forecastMultiplier));
+
+    return {
+      ...premiumBase,
+      basePremium,
+      riskAssessment: baseRiskAssessment,
+      weeklyPrediction,
+      forecastMultiplier: Number(forecastMultiplier.toFixed(2)),
+      finalPremium,
+      riskAdjustedPremium: finalPremium,
+      premiumRecommendation: weeklyPrediction.premiumAdjustmentPercent > 0
+        ? 'Increase premium due to elevated forecast risk'
+        : weeklyPrediction.premiumAdjustmentPercent < 0
+          ? 'Offer discounted premium due to lower forecast risk'
+          : 'Maintain current premium'
     };
   }
 

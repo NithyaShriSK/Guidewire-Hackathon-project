@@ -23,6 +23,7 @@ import AdminWorkers from './pages/Admin/AdminWorkers';
 import AdminPolicies from './pages/Admin/AdminPolicies';
 import AdminClaims from './pages/Admin/AdminClaims';
 import AdminSimulation from './pages/Admin/AdminSimulation';
+import AdminFraudSimulation from './pages/Admin/AdminFraudSimulation';
 import AdminSettings from './pages/Admin/AdminSettings';
 import AdminGeographic from './pages/Admin/AdminGeographic';
 
@@ -92,6 +93,7 @@ function App() {
                 <Route path="policies" element={<AdminPolicies />} />
                 <Route path="claims" element={<AdminClaims />} />
                 <Route path="simulation" element={<AdminSimulation />} />
+                <Route path="fraud-simulation" element={<AdminFraudSimulation />} />
                 <Route path="geographic" element={<AdminGeographic />} />
                 <Route path="settings" element={<AdminSettings />} />
               </Route>

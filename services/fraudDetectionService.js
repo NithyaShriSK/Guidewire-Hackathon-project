@@ -1,5 +1,12 @@
 const { Claim, Worker, MonitoringData, ActivityLog, FraudLog } = require('../models');
 const geolib = require('geolib');
+const mongoose = require('mongoose');
+const fs = require('fs');
+const path = require('path');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+
+const execFileAsync = promisify(execFile);
 
 class FraudDetectionService {
   constructor() {
@@ -23,6 +30,47 @@ class FraudDetectionService {
     };
   }
 
+  getFraudModelPaths() {
+    return {
+      scriptPath: path.join(__dirname, '..', 'ml', 'fraud_model.py'),
+      modelPath: path.join(__dirname, '..', 'ml', 'fraud_model.joblib')
+    };
+  }
+
+  async predictWithPythonModel(featureVector) {
+    const { scriptPath, modelPath } = this.getFraudModelPaths();
+
+    if (!fs.existsSync(scriptPath)) {
+      throw new Error('Fraud ML script not found');
+    }
+
+    const pythonBinary = process.env.PYTHON_BIN || (process.platform === 'win32' ? 'python' : 'python3');
+    const payload = JSON.stringify({
+      distance_km: Number(featureVector.distance_km ?? featureVector.distanceKm ?? 0),
+      time_minutes: Number(featureVector.time_minutes ?? featureVector.timeMinutes ?? 0),
+      avg_speed_kmph: Number(featureVector.avg_speed_kmph ?? featureVector.avgSpeedKmph ?? 0),
+      claims_last_week: Number(featureVector.claims_last_week ?? featureVector.claimsLastWeek ?? 0),
+      weather_match: Number(featureVector.weather_match ?? featureVector.weatherMatch ?? 0)
+    });
+
+    const { stdout } = await execFileAsync(pythonBinary, [
+      scriptPath,
+      '--predict',
+      '--input',
+      payload,
+      '--model',
+      modelPath
+    ], {
+      maxBuffer: 1024 * 1024 * 10,
+      env: {
+        ...process.env,
+        FRAUD_DATASET_PATH: process.env.FRAUD_DATASET_PATH || ''
+      }
+    });
+
+    return JSON.parse(stdout.trim());
+  }
+
   // Analyze claim for fraud indicators
   async analyzeClaim(claim) {
     try {
@@ -31,6 +79,26 @@ class FraudDetectionService {
         flags: [],
         manualReviewRequired: false
       };
+
+      let mlPrediction = null;
+      try {
+        const mlFeatures = await this.buildMLFeatureVectorFromClaim(claim);
+        mlPrediction = await this.predictWithPythonModel(mlFeatures);
+      } catch (error) {
+        console.warn('Fraud ML prediction failed, falling back to rule-based scoring:', error.message);
+      }
+
+      if (mlPrediction) {
+        const mlRiskScore = Number(mlPrediction.fraudScore ?? 0);
+        fraudResult.riskScore = Math.max(0, Math.min(1, mlRiskScore));
+        fraudResult.flags.push({
+          type: 'ml_prediction',
+          severity: this.getSeverityFromScore(mlRiskScore),
+          description: mlPrediction.reason || `ML model predicted ${mlPrediction.riskLevel || 'risk'} fraud likelihood`,
+          score: fraudResult.riskScore,
+          timestamp: new Date()
+        });
+      }
 
       // GPS spoofing detection
       const gpsResult = await this.detectGPSSpoofing(claim);
@@ -97,8 +165,10 @@ class FraudDetectionService {
         fraudResult.riskScore += activityResult.score;
       }
 
-      // Cap risk score at 1.0
-      fraudResult.riskScore = Math.min(1.0, fraudResult.riskScore);
+      if (!mlPrediction) {
+        // Cap risk score at 1.0 only for pure rule-based fallback path.
+        fraudResult.riskScore = Math.min(1.0, fraudResult.riskScore);
+      }
 
       // Determine if manual review is required
       fraudResult.manualReviewRequired = 
@@ -125,6 +195,296 @@ class FraudDetectionService {
         manualReviewRequired: true // Default to manual review on error
       };
     }
+  }
+
+  getSeverityFromScore(score) {
+    if (score >= 0.7) {
+      return 'high';
+    }
+
+    if (score >= 0.4) {
+      return 'medium';
+    }
+
+    return 'low';
+  }
+
+  async buildMLFeatureVectorFromClaim(claim) {
+    const claimTime = new Date(claim.trigger.timestamp);
+    const oneWeekAgo = new Date(claimTime.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    const previousClaim = await Claim.findOne({
+      workerId: claim.workerId,
+      'trigger.timestamp': { $lt: claimTime }
+    }).sort({ 'trigger.timestamp': -1 });
+
+    let distanceKm = 0;
+    let timeMinutes = 60;
+    let avgSpeedKmph = 0;
+
+    if (previousClaim?.trigger?.location && claim.trigger?.location) {
+      const distanceMeters = geolib.getDistance(
+        { latitude: previousClaim.trigger.location.latitude, longitude: previousClaim.trigger.location.longitude },
+        { latitude: claim.trigger.location.latitude, longitude: claim.trigger.location.longitude }
+      );
+      distanceKm = distanceMeters / 1000;
+      timeMinutes = Math.max(1, (claimTime.getTime() - new Date(previousClaim.trigger.timestamp).getTime()) / (1000 * 60));
+      avgSpeedKmph = (distanceKm / timeMinutes) * 60;
+    }
+
+    const claimsLastWeek = await Claim.countDocuments({
+      workerId: claim.workerId,
+      'trigger.timestamp': { $gte: oneWeekAgo, $lte: claimTime }
+    });
+
+    const weatherMatch = claim.validation?.apiSources?.some((source) => source.matchesTrigger)
+      || (claim.validation?.consensusScore ?? 0) >= this.fraudPatterns.apiMismatch.consensusThreshold
+      ? 1
+      : 0;
+
+    return {
+      distance_km: Number(distanceKm.toFixed(3)),
+      time_minutes: Number(timeMinutes.toFixed(2)),
+      avg_speed_kmph: Number(avgSpeedKmph.toFixed(2)),
+      claims_last_week: claimsLastWeek,
+      weather_match: weatherMatch
+    };
+  }
+
+  normalizeRiskLevel(score) {
+    if (score >= 0.7) {
+      return 'HIGH';
+    }
+
+    if (score >= 0.4) {
+      return 'MEDIUM';
+    }
+
+    return 'LOW';
+  }
+
+  buildScenarioProfile(scenario, worker) {
+    const safeWorker = worker || null;
+    const workerClaimsLastWeek = safeWorker?.riskProfile?.historicalClaims?.totalClaims
+      ? Math.min(10, safeWorker.riskProfile.historicalClaims.totalClaims)
+      : 0;
+    const workerCity = safeWorker?.personalInfo?.address?.city || safeWorker?.locationTracking?.workingRegion || 'Unknown';
+
+    const scenarioMap = {
+      gps_spoofing: {
+        inputData: {
+          distanceJump: '25 km in 5 mins',
+          expectedSpeed: '300 km/h',
+          weather: 'Clear',
+          claimReason: 'Heavy Rain',
+          claimsLastWeek: Math.max(4, workerClaimsLastWeek),
+          weatherMatch: 0,
+          claimTimingAnomaly: 1,
+          locationHistoryConsistency: 0.1,
+          avgSpeedKmph: 300,
+          distanceKm: 25,
+          timeMinutes: 5,
+          claimHour: 2
+        },
+        explanation: [
+          'Unrealistic travel speed detected',
+          'GPS jump is inconsistent with normal worker movement',
+          'Weather mismatch with the claim reason',
+          'Pattern matches known fraud behavior'
+        ]
+      },
+      fake_weather_claim: {
+        inputData: {
+          distanceJump: '2 km in 50 mins',
+          expectedSpeed: '2.4 km/h',
+          weather: 'Clear',
+          claimReason: 'Heavy Rain',
+          claimsLastWeek: Math.max(2, workerClaimsLastWeek),
+          weatherMatch: 0,
+          claimTimingAnomaly: 0,
+          locationHistoryConsistency: 0.7,
+          avgSpeedKmph: 2.4,
+          distanceKm: 2,
+          timeMinutes: 50,
+          claimHour: 14
+        },
+        explanation: [
+          'Claimed rain event does not match weather data',
+          'Movement pattern looks normal, but trigger conditions do not match',
+          'Potential false claim based on weather mismatch'
+        ]
+      },
+      frequent_claim_abuse: {
+        inputData: {
+          distanceJump: '1 km in 40 mins',
+          expectedSpeed: '1.5 km/h',
+          weather: 'Rain',
+          claimReason: 'Routine disruption',
+          claimsLastWeek: Math.max(7, workerClaimsLastWeek + 4),
+          weatherMatch: 1,
+          claimTimingAnomaly: 1,
+          locationHistoryConsistency: 0.8,
+          avgSpeedKmph: 1.5,
+          distanceKm: 1,
+          timeMinutes: 40,
+          claimHour: 19
+        },
+        explanation: [
+          'Too many claims in a short period',
+          'Repeated filing pattern increases abuse risk',
+          'Claim timing looks suspicious for the worker history'
+        ]
+      },
+      normal_case: {
+        inputData: {
+          distanceJump: '1.2 km in 35 mins',
+          expectedSpeed: '2 km/h',
+          weather: 'Rain',
+          claimReason: 'Heavy Rain',
+          claimsLastWeek: Math.min(1, workerClaimsLastWeek),
+          weatherMatch: 1,
+          claimTimingAnomaly: 0,
+          locationHistoryConsistency: 0.95,
+          avgSpeedKmph: 2,
+          distanceKm: 1.2,
+          timeMinutes: 35,
+          claimHour: 16
+        },
+        explanation: [
+          'Location history is consistent',
+          'Weather matches the claim reason',
+          'Claim frequency is within normal range'
+        ]
+      }
+    };
+
+    const selectedScenario = scenarioMap[scenario] || scenarioMap.normal_case;
+    const featureVector = {
+      distanceKm: selectedScenario.inputData.distanceKm,
+      timeMinutes: selectedScenario.inputData.timeMinutes,
+      avgSpeedKmph: selectedScenario.inputData.avgSpeedKmph,
+      claimsLastWeek: selectedScenario.inputData.claimsLastWeek,
+      weatherMatch: selectedScenario.inputData.weatherMatch,
+      claimTimingAnomaly: selectedScenario.inputData.claimTimingAnomaly,
+      locationHistoryConsistency: selectedScenario.inputData.locationHistoryConsistency,
+      workerCity,
+      claimHour: selectedScenario.inputData.claimHour
+    };
+
+    return {
+      scenario: scenarioMap[scenario] ? scenario : 'normal_case',
+      inputData: selectedScenario.inputData,
+      explanation: selectedScenario.explanation,
+      featureVector,
+      decisionFlow: [
+        'Received claim',
+        'Fetched worker history',
+        'Computed movement speed',
+        'Compared weather data',
+        'Generated feature vector',
+        'ML model predicted fraud probability',
+        'Assigned risk level'
+      ]
+    };
+  }
+
+  scoreFraudFeatures(featureVector) {
+    const speedRisk = Math.min(1, Math.max(0, (Number(featureVector.avgSpeedKmph || 0) - 60) / 180));
+    const jumpRisk = Math.min(1, Math.max(0, (Number(featureVector.distanceKm || 0) - 3) / 20));
+    const historyRisk = Math.min(1, Math.max(0, 1 - Number(featureVector.locationHistoryConsistency ?? 0.5)));
+    const weatherRisk = Number(featureVector.weatherMatch) === 1 ? 0 : 0.35;
+    const frequencyRisk = Math.min(1, Math.max(0, (Number(featureVector.claimsLastWeek || 0) - 2) / 6));
+    const timingRisk = Number(featureVector.claimTimingAnomaly) === 1 ? 0.25 : 0;
+
+    const fraudScore = Math.min(
+      1,
+      (speedRisk * 0.3) +
+      (jumpRisk * 0.2) +
+      (historyRisk * 0.2) +
+      (weatherRisk * 0.15) +
+      (frequencyRisk * 0.1) +
+      (timingRisk * 0.05)
+    );
+
+    const reasonParts = [];
+    if (speedRisk >= 0.5) reasonParts.push('Unrealistic travel speed');
+    if (jumpRisk >= 0.5) reasonParts.push('Large GPS location jump');
+    if (weatherRisk >= 0.2) reasonParts.push('Weather mismatch');
+    if (frequencyRisk >= 0.4) reasonParts.push('High claim frequency');
+    if (timingRisk >= 0.2) reasonParts.push('Abnormal claim timing');
+    if (historyRisk >= 0.4) reasonParts.push('Weak location history consistency');
+
+    return {
+      fraudScore: Number(fraudScore.toFixed(2)),
+      riskLevel: this.normalizeRiskLevel(fraudScore),
+      confidence: Number((0.7 + (Math.abs(fraudScore - 0.5) * 0.4)).toFixed(2)),
+      reason: reasonParts.length > 0 ? reasonParts.join(' + ') : 'No significant fraud indicators detected',
+      featureContributions: {
+        speedRisk: Number(speedRisk.toFixed(2)),
+        jumpRisk: Number(jumpRisk.toFixed(2)),
+        historyRisk: Number(historyRisk.toFixed(2)),
+        weatherRisk: Number(weatherRisk.toFixed(2)),
+        frequencyRisk: Number(frequencyRisk.toFixed(2)),
+        timingRisk: Number(timingRisk.toFixed(2))
+      }
+    };
+  }
+
+  async simulateFraudScenario({ scenario, workerId }) {
+    const worker = mongoose.Types.ObjectId.isValid(workerId)
+      ? await Worker.findById(workerId).lean()
+      : null;
+
+    const profile = this.buildScenarioProfile(scenario, worker);
+    let modelOutput;
+    let modelSource = 'rule-fallback';
+
+    try {
+      modelOutput = await this.predictWithPythonModel(profile.featureVector);
+      modelSource = 'python-ml';
+    } catch (error) {
+      console.warn('Fraud ML model unavailable, using fallback scorer:', error.message);
+      modelOutput = this.scoreFraudFeatures(profile.featureVector);
+    }
+
+    const normalizedModelOutput = {
+      fraudScore: Number(modelOutput.fraudScore ?? modelOutput.fraud_score ?? 0),
+      riskLevel: String(modelOutput.riskLevel ?? modelOutput.risk_level ?? this.normalizeRiskLevel(modelOutput.fraudScore ?? 0)).toUpperCase(),
+      confidence: Number(modelOutput.confidence ?? 0.75),
+      reason: modelOutput.reason || 'Fraud pattern detected',
+      modelSource: modelOutput.modelSource || modelSource,
+      modelName: modelOutput.modelName || null
+    };
+
+    return {
+      scenario: profile.scenario,
+      inputData: profile.inputData,
+      modelOutput: {
+        fraudScore: normalizedModelOutput.fraudScore,
+        riskLevel: normalizedModelOutput.riskLevel,
+        confidence: normalizedModelOutput.confidence,
+        reason: normalizedModelOutput.reason,
+        modelSource: normalizedModelOutput.modelSource,
+        modelName: normalizedModelOutput.modelName
+      },
+      explanation: profile.explanation,
+      decisionFlow: profile.decisionFlow,
+      featureVector: profile.featureVector,
+      triggeredFeatures: modelOutput.featureContributions || null,
+      worker: worker
+        ? {
+            id: worker._id,
+            name: `${worker.personalInfo?.firstName || ''} ${worker.personalInfo?.lastName || ''}`.trim(),
+            city: worker.personalInfo?.address?.city || worker.locationTracking?.workingRegion || null,
+            historicalClaims: worker.riskProfile?.historicalClaims || null
+          }
+        : {
+            id: workerId || 'demo-worker',
+            name: 'Demo Worker',
+            city: 'Demo City',
+            historicalClaims: null
+          }
+    };
   }
 
   // Detect GPS spoofing

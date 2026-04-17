@@ -1,5 +1,13 @@
-# Use Node.js 18 LTS as base image
-FROM node:18-alpine
+# Use Node.js 20 LTS with Python support for ML inference
+FROM node:20-bullseye-slim
+
+# Install Python for the ML model scripts used by the backend
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3 python3-pip \
+  && rm -rf /var/lib/apt/lists/*
+
+# Install Python ML dependencies used by fraud and risk model scripts
+RUN python3 -m pip install --no-cache-dir scikit-learn pandas joblib numpy
 
 # Set working directory
 WORKDIR /app
@@ -7,8 +15,9 @@ WORKDIR /app
 # Copy package.json and package-lock.json
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install backend production dependencies.
+# Use npm install instead of npm ci because lockfiles are not fully in sync.
+RUN npm install --omit=dev --no-audit --no-fund
 
 # Copy backend source code
 COPY . .
@@ -17,9 +26,9 @@ COPY . .
 RUN mkdir -p client
 COPY client/package*.json ./client/
 
-# Install client dependencies
+# Install client dependencies needed for production build.
 WORKDIR /app/client
-RUN npm ci --only=production
+RUN npm install --omit=dev --no-audit --no-fund
 
 # Copy client source code
 COPY . .
@@ -31,8 +40,8 @@ RUN npm run build
 WORKDIR /app
 
 # Create a non-root user
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S gigshield -u 1001
+RUN groupadd -g 1001 nodejs
+RUN useradd -m -u 1001 -g nodejs -s /usr/sbin/nologin gigshield
 
 # Change ownership of the app directory
 RUN chown -R gigshield:nodejs /app
